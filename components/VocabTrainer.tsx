@@ -166,21 +166,21 @@ export default function VocabTrainer() {
       const result = await callClaude(prompt);
       setNewRu(result);
     } catch (e) {
-      setAddMsg("Не получилось найти перевод, впиши вручную.");
+      setAddMsg("Couldn't find a translation, enter it manually.");
     }
     setLookupLoading(false);
   }
 
   async function handleAddWord() {
     if (!newTr.trim() || !newRu.trim()) {
-      setAddMsg("Заполни оба поля.");
+      setAddMsg("Fill in both fields.");
       return;
     }
     const trWord = addDirection === "tr-ru" ? newTr.trim() : newRu.trim();
     const ruWord = addDirection === "tr-ru" ? newRu.trim() : newTr.trim();
     const exists = words.some((w) => w.tr.toLowerCase() === trWord.toLowerCase());
     if (exists) {
-      setAddMsg("Это слово уже есть в списке.");
+      setAddMsg("This word is already in your list.");
       return;
     }
     const word: Word = {
@@ -197,13 +197,13 @@ export default function VocabTrainer() {
     setNewTr("");
     setNewRu("");
     if (isVerb(trWord)) {
-      setAddMsg("Добавлено! Подбираю формы глагола...");
+      setAddMsg("Added! Fetching verb forms...");
       attachVerbForms(word.id, trWord).then(() => {
-        setAddMsg("Формы глагола добавлены!");
+        setAddMsg("Verb forms added!");
         setTimeout(() => setAddMsg(""), 1800);
       });
     } else {
-      setAddMsg("Добавлено!");
+      setAddMsg("Added!");
       setTimeout(() => setAddMsg(""), 1500);
     }
   }
@@ -231,13 +231,13 @@ export default function VocabTrainer() {
   async function handleAddSelected() {
     const selectedWords = extracted.filter((e) => e.selected).map((e) => e.word);
     if (selectedWords.length === 0) {
-      setTextMsg("Отметь хотя бы одно слово.");
+      setTextMsg("Select at least one word.");
       return;
     }
     const already = new Set(words.map((w) => w.tr.toLowerCase()));
     const toAdd = selectedWords.filter((w) => !already.has(w));
     if (toAdd.length === 0) {
-      setTextMsg("Эти слова уже есть в списке.");
+      setTextMsg("These words are already in your list.");
       return;
     }
     setBatchLoading(true);
@@ -263,12 +263,12 @@ export default function VocabTrainer() {
       const verbCount = newWords.filter((w) => isVerb(w.tr)).length;
       setTextMsg(
         verbCount > 0
-          ? `Добавлено слов: ${newWords.length} (глаголов: ${verbCount}, подбираю формы...)`
-          : `Добавлено слов: ${newWords.length}`
+          ? `Added ${newWords.length} words (verbs: ${verbCount}, fetching forms...)`
+          : `Added ${newWords.length} words`
       );
       newWords.filter((w) => isVerb(w.tr)).forEach((w) => attachVerbForms(w.id, w.tr));
     } catch (e) {
-      setTextMsg("Не получилось перевести автоматически, попробуй ещё раз.");
+      setTextMsg("Couldn't translate automatically, try again.");
     }
     setBatchLoading(false);
   }
@@ -313,9 +313,9 @@ export default function VocabTrainer() {
         });
         return merged;
       });
-      setTextMsg(`Найдено слов на фото: ${arr.length}`);
+      setTextMsg(`Words found in photo: ${arr.length}`);
     } catch (e) {
-      setTextMsg("Не получилось распознать слова на фото, попробуй другое фото.");
+      setTextMsg("Couldn't recognize words in the photo, try another one.");
     }
     setImageLoading(false);
   }
@@ -388,15 +388,16 @@ export default function VocabTrainer() {
         @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 
         .vt-root {
-          --paper: #FDF1F4;
-          --paper-deep: #FADCE4;
-          --ink: #5B2F3E;
-          --ink-soft: #9C7482;
-          --tile-blue: #D6577E;
-          --tile-blue-deep: #B33A5E;
-          --turquoise: #6FAF94;
+          --paper: #FFFFFF;
+          --paper-deep: #F2F5F2;
+          --ink: #26332B;
+          --ink-soft: #869089;
+          --tile-blue: #2E9C6B;
+          --tile-blue-deep: #23805A;
+          --tab-active: #E7F1EB;
+          --turquoise: #2E9C6B;
           --coral: #CC4F5C;
-          --sand-line: #F0C7D2;
+          --sand-line: #E2E7E2;
           font-family: 'Inter', sans-serif;
           background: var(--paper);
           color: var(--ink);
@@ -407,11 +408,14 @@ export default function VocabTrainer() {
           margin: 0 auto;
         }
         .vt-root * { box-sizing: border-box; }
+        .vt-root button:focus { outline: none; }
+        .vt-root button { -webkit-tap-highlight-color: transparent; }
 
         .vt-header {
           display: flex;
           align-items: baseline;
           justify-content: space-between;
+          gap: 12px;
           margin-bottom: 20px;
         }
         .vt-title {
@@ -419,20 +423,24 @@ export default function VocabTrainer() {
           font-weight: 600;
           font-size: 26px;
           letter-spacing: -0.01em;
+          line-height: 1.1;
         }
         .vt-count {
           font-family: 'JetBrains Mono', monospace;
           font-size: 13px;
           color: var(--ink-soft);
+          white-space: nowrap;
+          flex-shrink: 0;
         }
 
         .vt-tabs {
           display: flex;
-          gap: 4px;
+          gap: 2px;
           margin-bottom: 22px;
           border-bottom: 2px solid var(--sand-line);
           padding-bottom: 0;
           overflow-x: auto;
+          overflow-y: hidden;
           -webkit-overflow-scrolling: touch;
           scrollbar-width: none;
         }
@@ -441,7 +449,7 @@ export default function VocabTrainer() {
           display: flex;
           align-items: center;
           gap: 6px;
-          padding: 8px 10px;
+          padding: 9px 11px;
           font-family: 'Inter', sans-serif;
           font-weight: 600;
           font-size: 13px;
@@ -459,14 +467,14 @@ export default function VocabTrainer() {
         .vt-tab:hover { color: var(--ink); }
         .vt-tab.active {
           color: var(--tile-blue-deep);
-          background: var(--paper-deep);
+          background: var(--tab-active);
           border-bottom: 2px solid var(--tile-blue);
         }
 
         .vt-card {
           background: var(--paper-deep);
           border-radius: 12px;
-          padding: 20px;
+          padding: 18px;
         }
 
         .vt-field-label {
@@ -479,28 +487,30 @@ export default function VocabTrainer() {
         .vt-input, .vt-textarea {
           width: 100%;
           font-family: 'Inter', sans-serif;
-          font-size: 15px;
-          padding: 10px 12px;
+          font-size: 16px;
+          padding: 11px 13px;
           border-radius: 8px;
           border: 1.5px solid var(--sand-line);
-          background: var(--paper);
+          background: #FFFFFF;
           color: var(--ink);
           outline: none;
         }
         .vt-input:focus, .vt-textarea:focus { border-color: var(--tile-blue); }
-        .vt-textarea { resize: vertical; min-height: 90px; font-size: 14px; }
+        .vt-textarea { resize: vertical; min-height: 96px; }
 
-        .vt-row { display: flex; gap: 10px; margin-bottom: 14px; align-items: flex-end; }
-        .vt-row > div { flex: 1; }
+        /* stacked, full-width rows — no horizontal overflow on mobile */
+        .vt-row { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+        .vt-row > div { width: 100%; }
 
         .vt-btn {
           display: inline-flex;
           align-items: center;
+          justify-content: center;
           gap: 6px;
           font-family: 'Inter', sans-serif;
           font-weight: 600;
           font-size: 13.5px;
-          padding: 9px 16px;
+          padding: 11px 16px;
           border-radius: 8px;
           border: none;
           cursor: pointer;
@@ -508,59 +518,44 @@ export default function VocabTrainer() {
         }
         .vt-btn:active { transform: scale(0.98); }
         .vt-btn:disabled { opacity: 0.5; cursor: default; }
-        .vt-btn-primary { background: var(--tile-blue); color: #F5F0E6; }
+        .vt-btn-block { width: 100%; }
+        .vt-btn-primary { background: var(--tile-blue); color: #FFFFFF; font-size: 14px; padding: 12px 16px; }
         .vt-btn-primary:hover:not(:disabled) { background: var(--tile-blue-deep); }
         .vt-btn-ghost { background: transparent; color: var(--tile-blue-deep); border: 1.5px solid var(--tile-blue); }
-        .vt-btn-ghost:hover:not(:disabled) { background: rgba(214,87,126,0.08); }
+        .vt-btn-ghost:hover:not(:disabled) { background: rgba(46,156,107,0.08); }
 
-        .vt-msg { font-size: 13px; color: var(--turquoise); margin-top: 8px; font-weight: 600; }
+        .vt-msg { font-size: 13px; color: var(--turquoise); margin-top: 10px; font-weight: 600; }
 
         .vt-chip {
           display: inline-flex;
           align-items: center;
           padding: 6px 12px;
-          margin: 4px;
           border-radius: 999px;
           font-size: 13.5px;
           font-weight: 500;
           cursor: pointer;
           border: 1.5px solid var(--sand-line);
-          background: var(--paper);
+          background: #FFFFFF;
           transition: all 0.12s ease;
         }
         .vt-chip.selected {
           background: var(--tile-blue);
-          color: #F5F0E6;
+          color: #FFFFFF;
           border-color: var(--tile-blue);
         }
 
-        .vt-chips-wrap { margin: 12px 0; }
-
-        .vt-tileborder {
-          height: 10px;
-          background: repeating-linear-gradient(
-            135deg,
-            var(--tile-blue) 0px, var(--tile-blue) 8px,
-            var(--turquoise) 8px, var(--turquoise) 16px,
-            var(--coral) 16px, var(--coral) 20px,
-            var(--turquoise) 20px, var(--turquoise) 28px,
-            var(--tile-blue) 28px, var(--tile-blue) 36px
-          );
-          border-radius: 6px 6px 0 0;
-        }
-        .vt-tileborder.bottom { border-radius: 0 0 6px 6px; }
+        .vt-chips-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
 
         .vt-flashcard {
-          background: var(--paper);
-          padding: 36px 24px;
           text-align: center;
+          padding: 36px 24px;
         }
         .vt-flash-word {
           font-family: 'Fraunces', serif;
           font-weight: 600;
           font-size: 34px;
           letter-spacing: -0.01em;
-          margin-bottom: 6px;
+          margin: 6px 0;
         }
         .vt-flash-hint {
           font-family: 'JetBrains Mono', monospace;
@@ -574,7 +569,7 @@ export default function VocabTrainer() {
           margin-top: 4px;
           padding: 3px 10px;
           border-radius: 999px;
-          background: rgba(111,175,148,0.18);
+          background: rgba(46,156,107,0.16);
           color: var(--turquoise);
           font-size: 11.5px;
           font-weight: 600;
@@ -582,6 +577,7 @@ export default function VocabTrainer() {
 
         .vt-quiz-input-row { display: flex; gap: 8px; margin-top: 18px; }
         .vt-quiz-input-row .vt-input { text-align: center; font-size: 17px; }
+        .vt-quiz-input-row .vt-btn { flex-shrink: 0; padding: 11px 15px; }
 
         .vt-feedback {
           margin-top: 16px;
@@ -591,10 +587,11 @@ export default function VocabTrainer() {
           font-weight: 600;
           display: flex;
           align-items: center;
+          justify-content: center;
           gap: 8px;
         }
-        .vt-feedback.correct { background: rgba(111,175,148,0.18); color: var(--turquoise); }
-        .vt-feedback.wrong { background: rgba(204,79,92,0.14); color: var(--coral); }
+        .vt-feedback.correct { background: rgba(46,156,107,0.14); color: var(--turquoise); }
+        .vt-feedback.wrong { background: rgba(204,79,92,0.12); color: var(--coral); }
 
         .vt-stats-bar {
           display: flex;
@@ -611,20 +608,23 @@ export default function VocabTrainer() {
           display: grid;
           grid-template-columns: 1fr auto 1fr;
           align-items: center;
-          gap: 8px;
+          gap: 10px;
           margin-bottom: 18px;
           font-size: 13px;
           font-weight: 600;
+          line-height: 1.25;
           color: var(--ink-soft);
         }
         .vt-direction-toggle span:first-child { text-align: right; }
         .vt-direction-toggle span:last-child { text-align: left; }
+        .vt-direction-toggle span.on { color: var(--tile-blue-deep); }
 
         .vt-list-item {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 10px 12px;
+          gap: 12px;
+          padding: 12px 14px;
           border-bottom: 1px solid var(--sand-line);
         }
         .vt-list-item:last-child { border-bottom: none; }
@@ -635,7 +635,7 @@ export default function VocabTrainer() {
           margin-left: 8px;
           padding: 1px 8px;
           border-radius: 999px;
-          background: rgba(214,87,126,0.12);
+          background: rgba(46,156,107,0.12);
           color: var(--tile-blue-deep);
           font-family: 'JetBrains Mono', monospace;
           font-size: 10.5px;
@@ -682,31 +682,31 @@ export default function VocabTrainer() {
 
       <div className="vt-header">
         <span className="vt-title">Türkçe Kelimeler</span>
-        <span className="vt-count">{words.length} слов</span>
+        <span className="vt-count">{words.length} words</span>
       </div>
 
       <div className="vt-tabs">
         <button className={`vt-tab ${tab === "add" ? "active" : ""}`} onClick={() => setTab("add")}>
-          <Plus size={15} /> Добавить
+          <Plus size={15} /> Add
         </button>
         <button className={`vt-tab ${tab === "text" ? "active" : ""}`} onClick={() => setTab("text")}>
-          <Type size={15} /> Текст
+          <Type size={15} /> Text
         </button>
         <button className={`vt-tab ${tab === "quiz" ? "active" : ""}`} onClick={() => setTab("quiz")}>
-          <Brain size={15} /> Квиз
+          <Brain size={15} /> Quiz
         </button>
         <button className={`vt-tab ${tab === "list" ? "active" : ""}`} onClick={() => setTab("list")}>
-          <ListIcon size={15} /> Слова
+          <ListIcon size={15} /> Words
         </button>
       </div>
 
       {tab === "add" && (
         <div className="vt-card">
           <div className="vt-direction-toggle" style={{ marginBottom: 16 }}>
-            <span>Турецкий → русский</span>
+            <span className={addDirection === "tr-ru" ? "on" : ""}>Turkish → Russian</span>
             <button
               className="vt-btn vt-btn-ghost"
-              style={{ padding: "4px 8px" }}
+              style={{ padding: "7px" }}
               onClick={() => {
                 setAddDirection((d) => (d === "tr-ru" ? "ru-tr" : "tr-ru"));
                 setNewTr("");
@@ -714,39 +714,39 @@ export default function VocabTrainer() {
                 setAddMsg("");
               }}
             >
-              <ArrowLeftRight size={14} />
+              <ArrowLeftRight size={15} />
             </button>
-            <span>Русский → турецкий</span>
+            <span className={addDirection === "ru-tr" ? "on" : ""}>Russian → Turkish</span>
           </div>
 
           <div className="vt-row">
             <div>
-              <span className="vt-field-label">{addDirection === "tr-ru" ? "Турецкое слово" : "Русское слово"}</span>
+              <span className="vt-field-label">{addDirection === "tr-ru" ? "Turkish word" : "Russian word"}</span>
               <input
                 className="vt-input"
                 value={newTr}
                 onChange={(e) => setNewTr(e.target.value)}
-                placeholder={addDirection === "tr-ru" ? "напр. yorgun" : "напр. уставший"}
+                placeholder={addDirection === "tr-ru" ? "e.g. yorgun" : "e.g. tired"}
               />
             </div>
-            <button className="vt-btn vt-btn-ghost" onClick={handleLookup} disabled={lookupLoading || !newTr.trim()}>
+            <button className="vt-btn vt-btn-ghost vt-btn-block" onClick={handleLookup} disabled={lookupLoading || !newTr.trim()}>
               {lookupLoading ? <Loader2 size={15} className="vt-spin" /> : <Search size={15} />}
-              Найти перевод
+              Find translation
             </button>
           </div>
           <div className="vt-row">
             <div>
-              <span className="vt-field-label">{addDirection === "tr-ru" ? "Перевод на русский" : "Перевод на турецкий"}</span>
+              <span className="vt-field-label">{addDirection === "tr-ru" ? "Russian translation" : "Turkish translation"}</span>
               <input
                 className="vt-input"
                 value={newRu}
                 onChange={(e) => setNewRu(e.target.value)}
-                placeholder={addDirection === "tr-ru" ? "напр. уставший" : "напр. yorgun"}
+                placeholder={addDirection === "tr-ru" ? "e.g. tired" : "e.g. yorgun"}
               />
             </div>
           </div>
-          <button className="vt-btn vt-btn-primary" onClick={handleAddWord}>
-            <Plus size={15} /> Сохранить слово
+          <button className="vt-btn vt-btn-primary vt-btn-block" onClick={handleAddWord}>
+            <Plus size={15} /> Save word
           </button>
           {addMsg && <div className="vt-msg">{addMsg}</div>}
         </div>
@@ -754,22 +754,22 @@ export default function VocabTrainer() {
 
       {tab === "text" && (
         <div className="vt-card">
-          <span className="vt-field-label">Вставь турецкий текст</span>
+          <span className="vt-field-label">Paste Turkish text</span>
           <textarea
             className="vt-textarea"
             value={pastedText}
             onChange={(e) => setPastedText(e.target.value)}
-            placeholder="Вставь абзац или пару предложений на турецком..."
+            placeholder="Paste a paragraph or a couple of sentences in Turkish..."
           />
           <div style={{ marginTop: 10 }}>
-            <button className="vt-btn vt-btn-ghost" onClick={handleExtract} disabled={!pastedText.trim()}>
-              <Sparkles size={15} /> Выделить слова
+            <button className="vt-btn vt-btn-ghost vt-btn-block" onClick={handleExtract} disabled={!pastedText.trim()}>
+              <Sparkles size={15} /> Extract words
             </button>
           </div>
 
           <div className="vt-divider-line" />
 
-          <span className="vt-field-label">Или загрузи фото (вывеска, меню, страница книги...)</span>
+          <span className="vt-field-label">Or upload a photo (sign, menu, book page...)</span>
           <input
             ref={fileInputRef}
             type="file"
@@ -778,13 +778,13 @@ export default function VocabTrainer() {
             style={{ display: "none" }}
           />
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <button className="vt-btn vt-btn-ghost" onClick={() => fileInputRef.current && fileInputRef.current.click()}>
-              <ImageIcon size={15} /> Выбрать фото
+            <button className="vt-btn vt-btn-ghost vt-btn-block" onClick={() => fileInputRef.current && fileInputRef.current.click()}>
+              <ImageIcon size={15} /> Choose photo
             </button>
             {imagePreview && (
               <>
                 <img src={imagePreview} alt="preview" className="vt-image-preview" />
-                <button className="vt-del-btn" onClick={clearImage} title="Убрать фото">
+                <button className="vt-del-btn" onClick={clearImage} title="Remove photo">
                   <XCircle size={18} />
                 </button>
               </>
@@ -792,9 +792,9 @@ export default function VocabTrainer() {
           </div>
           {imagePreview && (
             <div style={{ marginTop: 10 }}>
-              <button className="vt-btn vt-btn-primary" onClick={handleExtractFromImage} disabled={imageLoading}>
+              <button className="vt-btn vt-btn-primary vt-btn-block" onClick={handleExtractFromImage} disabled={imageLoading}>
                 {imageLoading ? <Loader2 size={15} className="vt-spin" /> : <Sparkles size={15} />}
-                Извлечь слова с фото
+                Extract words from photo
               </button>
             </div>
           )}
@@ -812,9 +812,9 @@ export default function VocabTrainer() {
                   </span>
                 ))}
               </div>
-              <button className="vt-btn vt-btn-primary" onClick={handleAddSelected} disabled={batchLoading}>
+              <button className="vt-btn vt-btn-primary vt-btn-block" onClick={handleAddSelected} disabled={batchLoading}>
                 {batchLoading ? <Loader2 size={15} className="vt-spin" /> : <Plus size={15} />}
-                Добавить выбранные и перевести
+                Add selected & translate
               </button>
             </>
           )}
@@ -825,91 +825,87 @@ export default function VocabTrainer() {
       {tab === "quiz" && (
         <div>
           <div className="vt-direction-toggle">
-            <span>Турецкий → русский</span>
+            <span className={direction === "tr-ru" ? "on" : ""}>Turkish → Russian</span>
             <button
               className="vt-btn vt-btn-ghost"
-              style={{ padding: "4px 8px" }}
+              style={{ padding: "7px" }}
               onClick={() => {
                 const next = direction === "tr-ru" ? "ru-tr" : "tr-ru";
                 setDirection(next);
                 pickNext(words, next);
               }}
             >
-              <ArrowLeftRight size={14} />
+              <ArrowLeftRight size={15} />
             </button>
-            <span>Русский → турецкий</span>
+            <span className={direction === "ru-tr" ? "on" : ""}>Russian → Turkish</span>
           </div>
 
           {words.length === 0 && (
-            <div className="vt-empty">Пока нет ни одного слова. Добавь слова во вкладке «Добавить» или «Текст».</div>
+            <div className="vt-empty">No words yet. Add some in the Add or Text tab.</div>
           )}
 
           {words.length > 0 && current && (
-            <div className="vt-card" style={{ padding: 0, overflow: "hidden" }}>
-              <div className="vt-tileborder" />
-              <div className="vt-flashcard">
-                <div className="vt-flash-hint">{direction === "tr-ru" ? "переведи на русский" : "переведи на турецкий"}</div>
-                <div className="vt-flash-word">{quizForm ? quizForm.form : direction === "tr-ru" ? current.tr : current.ru}</div>
-                {quizForm && <div className="vt-flash-formlabel">{quizForm.label}</div>}
+            <div className="vt-card vt-flashcard">
+              <div className="vt-flash-hint">{direction === "tr-ru" ? "translate to Russian" : "translate to Turkish"}</div>
+              <div className="vt-flash-word">{quizForm ? quizForm.form : direction === "tr-ru" ? current.tr : current.ru}</div>
+              {quizForm && <div className="vt-flash-formlabel">{quizForm.label}</div>}
 
-                <div className="vt-quiz-input-row">
-                  <input
-                    ref={inputRef}
-                    className="vt-input"
-                    value={answer}
-                    onChange={(e) => setAnswer(e.target.value)}
-                    onKeyDown={handleQuizKey}
-                    placeholder="твой ответ"
-                    disabled={!!feedback}
-                  />
-                  {!feedback ? (
-                    <button className="vt-btn vt-btn-primary" onClick={checkAnswer}>
-                      <Check size={15} />
-                    </button>
-                  ) : (
-                    <button className="vt-btn vt-btn-primary" onClick={() => pickNext(words)}>
-                      <Shuffle size={15} />
-                    </button>
-                  )}
-                </div>
-
-                {feedback && (
-                  <div className={`vt-feedback ${feedback.correct ? "correct" : "wrong"}`}>
-                    {feedback.correct ? <Check size={16} /> : <X size={16} />}
-                    {feedback.correct ? "Верно!" : `Правильный ответ: ${feedback.correctAnswer}`}
-                  </div>
+              <div className="vt-quiz-input-row">
+                <input
+                  ref={inputRef}
+                  className="vt-input"
+                  value={answer}
+                  onChange={(e) => setAnswer(e.target.value)}
+                  onKeyDown={handleQuizKey}
+                  placeholder="your answer"
+                  disabled={!!feedback}
+                />
+                {!feedback ? (
+                  <button className="vt-btn vt-btn-primary" onClick={checkAnswer}>
+                    <Check size={15} />
+                  </button>
+                ) : (
+                  <button className="vt-btn vt-btn-primary" onClick={() => pickNext(words)}>
+                    <Shuffle size={15} />
+                  </button>
                 )}
               </div>
-              <div className="vt-tileborder bottom" />
+
+              {feedback && (
+                <div className={`vt-feedback ${feedback.correct ? "correct" : "wrong"}`}>
+                  {feedback.correct ? <Check size={16} /> : <X size={16} />}
+                  {feedback.correct ? "Correct!" : `Correct answer: ${feedback.correctAnswer}`}
+                </div>
+              )}
             </div>
           )}
 
           {words.length > 0 && (
             <div className="vt-stats-bar">
-              <span>Верно: <b>{sessionStats.correct}</b></span>
-              <span>Неверно: <b>{sessionStats.wrong}</b></span>
+              <span>Correct: <b>{sessionStats.correct}</b></span>
+              <span>Wrong: <b>{sessionStats.wrong}</b></span>
             </div>
           )}
         </div>
       )}
 
       {tab === "list" && (
-        <div className="vt-card" style={{ padding: 0 }}>
-          {sortedList.length === 0 && <div className="vt-empty">Список пока пуст.</div>}
+        <div className="vt-card" style={{ padding: "4px" }}>
+          {sortedList.length === 0 && <div className="vt-empty">Your list is empty.</div>}
           {sortedList.map((w) => (
             <div className="vt-list-item" key={w.id}>
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div className="vt-list-word">{w.tr}</div>
                 <div className="vt-list-tr">
                   {w.ru}
                   {w.forms && w.forms.length > 0 && (
                     <span className="vt-verb-badge" title={w.forms.map((f) => f.form).join(", ")}>
-                      гл. · {w.forms.length} форм
+                      verb · {w.forms.length} forms
                     </span>
                   )}
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
                 <span className="vt-list-score">✓{w.correct} ✗{w.wrong}</span>
                 <button className="vt-del-btn" onClick={() => deleteWord(w.id)}>
                   <Trash2 size={16} />
