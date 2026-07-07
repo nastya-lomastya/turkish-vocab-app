@@ -18,7 +18,7 @@ import {
   XCircle,
 } from "lucide-react";
 
-type VerbForm = { form: string; label: string };
+type VerbForm = { form: string; label: string; ru: string };
 type Word = {
   id: string;
   tr: string;
@@ -114,7 +114,7 @@ async function callClaudeVision(prompt: string, mediaType: string, data: string)
 }
 
 async function generateVerbForms(trWord: string): Promise<VerbForm[]> {
-  const prompt = `Турецкий глагол в инфинитиве: "${trWord}". Дай ровно 5 распространённых спрягаемых форм этого глагола, которые часто встречаются в живой речи: настоящее длительное время (-yor) я, прошедшее категорическое время я, будущее время я, настоящее-широкое время (aorist) я, повелительное наклонение ты (просто основа глагола). Ответь СТРОГО в виде JSON-массива из ровно 5 объектов вида [{"form":"eleştiriyorum","label":"наст. время, я"}], без markdown-разметки и без пояснений.`;
+  const prompt = `Турецкий глагол в инфинитиве: "${trWord}". Дай ровно 5 распространённых спрягаемых форм этого глагола, которые часто встречаются в живой речи: настоящее длительное время (-yor) я, прошедшее категорическое время я, будущее время я, настоящее-широкое время (aorist) я, повелительное наклонение ты (просто основа глагола). Для каждой формы также дай правильный перевод именно ЭТОЙ формы на русский язык, в том же лице и времени, БЕЗ местоимения (например, для формы "eleştiriyorum" перевод должен быть "критикую", а не "критиковать" и не "я критикую"; для будущего времени — "буду критиковать"). Ответь СТРОГО в виде JSON-массива из ровно 5 объектов вида [{"form":"eleştiriyorum","label":"наст. время, я","ru":"критикую"}], без markdown-разметки и без пояснений.`;
   const raw = await callClaude(prompt);
   const arr = JSON.parse(stripFence(raw));
   return Array.isArray(arr) ? arr : [];
@@ -148,6 +148,7 @@ export default function VocabTrainer() {
   const [answer, setAnswer] = useState("");
   const [feedback, setFeedback] = useState<{ correct: boolean; correctAnswer: string } | null>(null);
   const [sessionStats, setSessionStats] = useState({ correct: 0, wrong: 0 });
+  const [mastered, setMastered] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
   // ---- load from server on mount ----
@@ -340,15 +341,24 @@ export default function VocabTrainer() {
   }
 
   // ---- quiz tab ----
-  function pickNext(list: Word[], dir?: "tr-ru" | "ru-tr") {
+  // A word answered correctly steps out of the pool until every other word
+  // in the deck has also been answered correctly (then the round resets).
+  function pickNext(list: Word[], dir?: "tr-ru" | "ru-tr", masteredOverride?: Set<string>) {
     const useDirection = dir || direction;
     if (list.length === 0) {
       setCurrent(null);
       setQuizForm(null);
       return;
     }
-    const pool = list.length > 1 && current ? list.filter((w) => w.id !== current.id) : list;
-    const pick = pool[Math.floor(Math.random() * pool.length)];
+    const activeMastered = masteredOverride !== undefined ? masteredOverride : mastered;
+    let pool = list.filter((w) => !activeMastered.has(w.id));
+    if (pool.length === 0) {
+      if (masteredOverride === undefined) setMastered(new Set());
+      pool = list;
+    }
+    const narrowed = pool.length > 1 && current ? pool.filter((w) => w.id !== current.id) : pool;
+    const finalPool = narrowed.length > 0 ? narrowed : pool;
+    const pick = finalPool[Math.floor(Math.random() * finalPool.length)];
     setCurrent(pick);
     if (useDirection === "tr-ru" && pick.forms && pick.forms.length > 0 && Math.random() < 0.6) {
       setQuizForm(pick.forms[Math.floor(Math.random() * pick.forms.length)]);
@@ -369,7 +379,7 @@ export default function VocabTrainer() {
 
   async function checkAnswer() {
     if (!current) return;
-    const promptAnswer = direction === "tr-ru" ? current.ru : current.tr;
+    const promptAnswer = direction === "tr-ru" ? quizForm?.ru || current.ru : current.tr;
     const variants = promptAnswer
       .split(/[,;/]/)
       .map((s) => s.trim().toLowerCase())
@@ -378,6 +388,9 @@ export default function VocabTrainer() {
     const correct = variants.includes(userAns);
     setFeedback({ correct, correctAnswer: promptAnswer });
     setSessionStats((s) => ({ correct: s.correct + (correct ? 1 : 0), wrong: s.wrong + (correct ? 0 : 1) }));
+    if (correct) {
+      setMastered((prev) => new Set(prev).add(current.id));
+    }
     const newCorrect = current.correct + (correct ? 1 : 0);
     const newWrong = current.wrong + (correct ? 0 : 1);
     setWords((prev) => prev.map((w) => (w.id === current.id ? { ...w, correct: newCorrect, wrong: newWrong } : w)));
@@ -856,7 +869,8 @@ export default function VocabTrainer() {
               onClick={() => {
                 const next = direction === "tr-ru" ? "ru-tr" : "tr-ru";
                 setDirection(next);
-                pickNext(words, next);
+                setMastered(new Set());
+                pickNext(words, next, new Set());
               }}
             >
               <ArrowLeftRight size={15} />
