@@ -148,7 +148,6 @@ export default function VocabTrainer() {
   const [answer, setAnswer] = useState("");
   const [feedback, setFeedback] = useState<{ correct: boolean; correctAnswer: string } | null>(null);
   const [sessionStats, setSessionStats] = useState({ correct: 0, wrong: 0 });
-  const [mastered, setMastered] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
   // ---- load from server on mount ----
@@ -341,24 +340,29 @@ export default function VocabTrainer() {
   }
 
   // ---- quiz tab ----
-  // A word answered correctly steps out of the pool until every other word
-  // in the deck has also been answered correctly (then the round resets).
-  function pickNext(list: Word[], dir?: "tr-ru" | "ru-tr", masteredOverride?: Set<string>) {
+  // Weighted pick based on all-time correct/wrong: words you consistently get
+  // right become rare (never impossible), words you miss or haven't tried yet
+  // come up more often. Persists across sessions since it reads the DB counts.
+  function pickWeighted(pool: Word[]): Word {
+    const weights = pool.map((w) => (w.wrong + 1) / (w.correct + 1));
+    const total = weights.reduce((a, b) => a + b, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < pool.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return pool[i];
+    }
+    return pool[pool.length - 1];
+  }
+
+  function pickNext(list: Word[], dir?: "tr-ru" | "ru-tr") {
     const useDirection = dir || direction;
     if (list.length === 0) {
       setCurrent(null);
       setQuizForm(null);
       return;
     }
-    const activeMastered = masteredOverride !== undefined ? masteredOverride : mastered;
-    let pool = list.filter((w) => !activeMastered.has(w.id));
-    if (pool.length === 0) {
-      if (masteredOverride === undefined) setMastered(new Set());
-      pool = list;
-    }
-    const narrowed = pool.length > 1 && current ? pool.filter((w) => w.id !== current.id) : pool;
-    const finalPool = narrowed.length > 0 ? narrowed : pool;
-    const pick = finalPool[Math.floor(Math.random() * finalPool.length)];
+    const pool = list.length > 1 && current ? list.filter((w) => w.id !== current.id) : list;
+    const pick = pickWeighted(pool);
     setCurrent(pick);
     if (useDirection === "tr-ru" && pick.forms && pick.forms.length > 0 && Math.random() < 0.6) {
       setQuizForm(pick.forms[Math.floor(Math.random() * pick.forms.length)]);
@@ -388,9 +392,6 @@ export default function VocabTrainer() {
     const correct = variants.includes(userAns);
     setFeedback({ correct, correctAnswer: promptAnswer });
     setSessionStats((s) => ({ correct: s.correct + (correct ? 1 : 0), wrong: s.wrong + (correct ? 0 : 1) }));
-    if (correct) {
-      setMastered((prev) => new Set(prev).add(current.id));
-    }
     const newCorrect = current.correct + (correct ? 1 : 0);
     const newWrong = current.wrong + (correct ? 0 : 1);
     setWords((prev) => prev.map((w) => (w.id === current.id ? { ...w, correct: newCorrect, wrong: newWrong } : w)));
@@ -869,8 +870,7 @@ export default function VocabTrainer() {
               onClick={() => {
                 const next = direction === "tr-ru" ? "ru-tr" : "tr-ru";
                 setDirection(next);
-                setMastered(new Set());
-                pickNext(words, next, new Set());
+                pickNext(words, next);
               }}
             >
               <ArrowLeftRight size={15} />
