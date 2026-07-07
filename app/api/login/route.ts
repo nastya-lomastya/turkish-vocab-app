@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionToken, SESSION_COOKIE } from "@/lib/auth";
+import { getSessionToken, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from "@/lib/auth";
 
 export async function POST(req: Request) {
   const { password } = await req.json();
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
     httpOnly: true,
     secure: true,
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
+    maxAge: SESSION_MAX_AGE_SECONDS,
     path: "/",
   });
   return res;

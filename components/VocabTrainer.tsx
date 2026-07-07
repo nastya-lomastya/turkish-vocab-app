@@ -42,8 +42,16 @@ function isVerb(trWord: string) {
 }
 
 // ---- server calls ----
+function redirectToLogin() {
+  window.location.href = "/login";
+}
+
 async function apiListWords(): Promise<Word[]> {
   const res = await fetch("/api/words");
+  if (res.status === 401) {
+    redirectToLogin();
+    return [];
+  }
   const json = await res.json();
   return (json.words || []).map((w: any) => ({
     ...w,
@@ -53,23 +61,26 @@ async function apiListWords(): Promise<Word[]> {
 }
 
 async function apiAddWord(word: Word) {
-  await fetch("/api/words", {
+  const res = await fetch("/api/words", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(word),
   });
+  if (res.status === 401) redirectToLogin();
 }
 
 async function apiUpdateWord(id: string, patch: Partial<Pick<Word, "forms" | "correct" | "wrong">>) {
-  await fetch(`/api/words/${id}`, {
+  const res = await fetch(`/api/words/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   });
+  if (res.status === 401) redirectToLogin();
 }
 
 async function apiDeleteWord(id: string) {
-  await fetch(`/api/words/${id}`, { method: "DELETE" });
+  const res = await fetch(`/api/words/${id}`, { method: "DELETE" });
+  if (res.status === 401) redirectToLogin();
 }
 
 async function callClaude(prompt: string, maxTokens?: number): Promise<string> {
@@ -78,6 +89,10 @@ async function callClaude(prompt: string, maxTokens?: number): Promise<string> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt, maxTokens }),
   });
+  if (res.status === 401) {
+    redirectToLogin();
+    throw new Error("session expired");
+  }
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || "claude call failed");
   return json.text as string;
@@ -89,6 +104,10 @@ async function callClaudeVision(prompt: string, mediaType: string, data: string)
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt, image: { mediaType, data }, maxTokens: 500 }),
   });
+  if (res.status === 401) {
+    redirectToLogin();
+    throw new Error("session expired");
+  }
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || "claude call failed");
   return json.text as string;
