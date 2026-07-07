@@ -24,10 +24,10 @@ export default function LoginPage() {
         router.push("/");
         router.refresh();
       } else {
-        setError("Неверный пароль");
+        setError("Incorrect password");
       }
     } catch (e) {
-      setError("Что-то пошло не так, попробуй ещё раз");
+      setError("Something went wrong, try again");
     }
     setLoading(false);
   }
@@ -39,14 +39,14 @@ export default function LoginPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#FDF1F4",
+        background: "#FFFFFF",
         fontFamily: "Inter, sans-serif",
       }}
     >
       <form
         onSubmit={handleSubmit}
         style={{
-          background: "#FADCE4",
+          background: "#F2F5F2",
           padding: "32px",
           borderRadius: "16px",
           width: "300px",
@@ -55,21 +55,21 @@ export default function LoginPage() {
           gap: "14px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#5B2F3E", fontWeight: 700, fontSize: "18px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#26332B", fontWeight: 700, fontSize: "18px" }}>
           <Lock size={18} /> Türkçe Kelimeler
         </div>
         <input
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Пароль"
+          placeholder="Password"
           autoFocus
           style={{
             padding: "10px 12px",
             borderRadius: "8px",
-            border: "1.5px solid #F0C7D2",
-            background: "#FDF1F4",
-            color: "#5B2F3E",
+            border: "1.5px solid #E2E7E2",
+            background: "#FFFFFF",
+            color: "#26332B",
             outline: "none",
             fontSize: "15px",
           }}
@@ -81,14 +81,14 @@ export default function LoginPage() {
             padding: "10px",
             borderRadius: "8px",
             border: "none",
-            background: "#D6577E",
-            color: "#F5F0E6",
+            background: "#2E9C6B",
+            color: "#FFFFFF",
             fontWeight: 600,
             cursor: "pointer",
             opacity: loading ? 0.6 : 1,
           }}
         >
-          {loading ? "..." : "Войти"}
+          {loading ? "..." : "Log in"}
         </button>
         {error && <div style={{ color: "#CC4F5C", fontSize: "13px", fontWeight: 600 }}>{error}</div>}
       </form>

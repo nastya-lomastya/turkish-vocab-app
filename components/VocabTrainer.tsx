@@ -608,15 +608,16 @@ export default function VocabTrainer() {
           display: grid;
           grid-template-columns: 1fr auto 1fr;
           align-items: center;
-          gap: 10px;
+          gap: 8px;
           margin-bottom: 18px;
-          font-size: 13px;
+          font-size: 12.5px;
           font-weight: 600;
           line-height: 1.25;
           color: var(--ink-soft);
         }
         .vt-direction-toggle span:first-child { text-align: right; }
         .vt-direction-toggle span:last-child { text-align: left; }
+        .vt-direction-toggle span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .vt-direction-toggle span.on { color: var(--tile-blue-deep); }
 
         .vt-list-item {
