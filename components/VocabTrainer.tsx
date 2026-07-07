@@ -405,6 +405,7 @@ export default function VocabTrainer() {
           padding: 28px;
           max-width: 640px;
           width: 100%;
+          min-width: 0;
           margin: 0 auto;
         }
         .vt-root * { box-sizing: border-box; }
@@ -424,6 +425,8 @@ export default function VocabTrainer() {
           font-size: 26px;
           letter-spacing: -0.01em;
           line-height: 1.1;
+          min-width: 0;
+          overflow-wrap: break-word;
         }
         .vt-count {
           font-family: 'JetBrains Mono', monospace;
@@ -443,6 +446,7 @@ export default function VocabTrainer() {
           overflow-y: hidden;
           -webkit-overflow-scrolling: touch;
           scrollbar-width: none;
+          touch-action: pan-x;
         }
         .vt-tabs::-webkit-scrollbar { display: none; }
         .vt-tab {
@@ -606,7 +610,7 @@ export default function VocabTrainer() {
 
         .vt-direction-toggle {
           display: grid;
-          grid-template-columns: 1fr auto 1fr;
+          grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
           align-items: center;
           gap: 8px;
           margin-bottom: 18px;
