@@ -704,7 +704,7 @@ export default function VocabTrainer() {
       {tab === "add" && (
         <div className="vt-card">
           <div className="vt-direction-toggle" style={{ marginBottom: 16 }}>
-            <span className={addDirection === "tr-ru" ? "on" : ""}>Turkish → Russian</span>
+            <span className="on">{addDirection === "tr-ru" ? "Turkish" : "Russian"}</span>
             <button
               className="vt-btn vt-btn-ghost"
               style={{ padding: "7px" }}
@@ -717,7 +717,7 @@ export default function VocabTrainer() {
             >
               <ArrowLeftRight size={15} />
             </button>
-            <span className={addDirection === "ru-tr" ? "on" : ""}>Russian → Turkish</span>
+            <span>{addDirection === "tr-ru" ? "Russian" : "Turkish"}</span>
           </div>
 
           <div className="vt-row">
@@ -826,7 +826,7 @@ export default function VocabTrainer() {
       {tab === "quiz" && (
         <div>
           <div className="vt-direction-toggle">
-            <span className={direction === "tr-ru" ? "on" : ""}>Turkish → Russian</span>
+            <span className="on">{direction === "tr-ru" ? "Turkish" : "Russian"}</span>
             <button
               className="vt-btn vt-btn-ghost"
               style={{ padding: "7px" }}
@@ -838,7 +838,7 @@ export default function VocabTrainer() {
             >
               <ArrowLeftRight size={15} />
             </button>
-            <span className={direction === "ru-tr" ? "on" : ""}>Russian → Turkish</span>
+            <span>{direction === "tr-ru" ? "Russian" : "Turkish"}</span>
           </div>
 
           {words.length === 0 && (
