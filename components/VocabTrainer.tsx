@@ -428,19 +428,23 @@ export default function VocabTrainer() {
 
         .vt-tabs {
           display: flex;
-          gap: 6px;
+          gap: 4px;
           margin-bottom: 22px;
           border-bottom: 2px solid var(--sand-line);
           padding-bottom: 0;
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
         }
+        .vt-tabs::-webkit-scrollbar { display: none; }
         .vt-tab {
           display: flex;
           align-items: center;
           gap: 6px;
-          padding: 8px 14px;
+          padding: 8px 10px;
           font-family: 'Inter', sans-serif;
           font-weight: 600;
-          font-size: 13.5px;
+          font-size: 13px;
           color: var(--ink-soft);
           background: transparent;
           border: none;
@@ -449,6 +453,8 @@ export default function VocabTrainer() {
           transition: color 0.15s ease, background 0.15s ease;
           position: relative;
           top: 2px;
+          flex-shrink: 0;
+          white-space: nowrap;
         }
         .vt-tab:hover { color: var(--ink); }
         .vt-tab.active {
@@ -602,15 +608,17 @@ export default function VocabTrainer() {
         .vt-stats-bar b { color: var(--ink); }
 
         .vt-direction-toggle {
-          display: flex;
+          display: grid;
+          grid-template-columns: 1fr auto 1fr;
           align-items: center;
           gap: 8px;
-          justify-content: center;
           margin-bottom: 18px;
           font-size: 13px;
           font-weight: 600;
           color: var(--ink-soft);
         }
+        .vt-direction-toggle span:first-child { text-align: right; }
+        .vt-direction-toggle span:last-child { text-align: left; }
 
         .vt-list-item {
           display: flex;
