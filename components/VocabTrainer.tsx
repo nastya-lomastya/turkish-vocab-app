@@ -41,6 +41,31 @@ function isVerb(trWord: string) {
   return /(mek|mak)$/i.test((trWord || "").trim());
 }
 
+function levenshtein(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] =
+        a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+// Accepts small typos and grammatical-ending mismatches (важно/важный,
+// желания/пожелания) without letting through genuinely different words.
+function isCloseEnough(a: string, b: string): boolean {
+  if (a === b) return true;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen < 5) return false;
+  const allowed = maxLen <= 8 ? 1 : maxLen <= 14 ? 2 : 3;
+  return levenshtein(a, b) <= allowed;
+}
+
 // ---- server calls ----
 function redirectToLogin() {
   window.location.href = "/login";
@@ -389,7 +414,7 @@ export default function VocabTrainer() {
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean);
     const userAns = answer.trim().toLowerCase();
-    const correct = variants.includes(userAns);
+    const correct = variants.some((v) => isCloseEnough(userAns, v));
     setFeedback({ correct, correctAnswer: promptAnswer });
     setSessionStats((s) => ({ correct: s.correct + (correct ? 1 : 0), wrong: s.wrong + (correct ? 0 : 1) }));
     const newCorrect = current.correct + (correct ? 1 : 0);
