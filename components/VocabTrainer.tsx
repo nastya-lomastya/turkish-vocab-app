@@ -181,6 +181,7 @@ export default function VocabTrainer() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Quiz tab state
+  const [quizFilter, setQuizFilter] = useState<"all" | "verbs">("all");
   const [direction, setDirection] = useState<"tr-ru" | "ru-tr">("tr-ru");
   const [current, setCurrent] = useState<Word | null>(null);
   const [quizForm, setQuizForm] = useState<VerbForm | null>(null);
@@ -413,12 +414,18 @@ export default function VocabTrainer() {
     setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
   }
 
+  const quizWords = quizFilter === "verbs" ? words.filter((w) => isVerb(w.tr)) : words;
+
   useEffect(() => {
-    if (tab === "quiz" && loaded && !current && words.length > 0) {
-      pickNext(words);
+    if (tab === "quiz" && loaded && quizWords.length > 0 && (!current || !quizWords.some((w) => w.id === current.id))) {
+      pickNext(quizWords);
+    }
+    if (tab === "quiz" && quizWords.length === 0) {
+      setCurrent(null);
+      setQuizForm(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, loaded, words.length]);
+  }, [tab, loaded, quizWords.length, quizFilter]);
 
   async function checkAnswer() {
     if (!current) return;
@@ -440,7 +447,7 @@ export default function VocabTrainer() {
   function handleQuizKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
       if (feedback) {
-        pickNext(words);
+        pickNext(quizWords);
       } else {
         checkAnswer();
       }
@@ -686,6 +693,30 @@ export default function VocabTrainer() {
         }
         .vt-stats-bar b { color: var(--ink); }
 
+        .vt-quiz-filter {
+          display: flex;
+          justify-content: center;
+          gap: 6px;
+          margin-bottom: 14px;
+        }
+        .vt-filter-btn {
+          font-family: 'Inter', sans-serif;
+          font-weight: 600;
+          font-size: 12.5px;
+          padding: 6px 14px;
+          border-radius: 999px;
+          border: 1.5px solid var(--sand-line);
+          background: #FFFFFF;
+          color: var(--ink-soft);
+          cursor: pointer;
+          transition: all 0.12s ease;
+        }
+        .vt-filter-btn.active {
+          background: var(--tile-blue);
+          color: #FFFFFF;
+          border-color: var(--tile-blue);
+        }
+
         .vt-direction-toggle {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -907,6 +938,21 @@ export default function VocabTrainer() {
 
       {tab === "quiz" && (
         <div>
+          <div className="vt-quiz-filter">
+            <button
+              className={`vt-filter-btn ${quizFilter === "all" ? "active" : ""}`}
+              onClick={() => setQuizFilter("all")}
+            >
+              All
+            </button>
+            <button
+              className={`vt-filter-btn ${quizFilter === "verbs" ? "active" : ""}`}
+              onClick={() => setQuizFilter("verbs")}
+            >
+              Verbs
+            </button>
+          </div>
+
           <div className="vt-direction-toggle">
             <span className="on">{direction === "tr-ru" ? "Turkish" : "Russian"}</span>
             <button
@@ -915,7 +961,7 @@ export default function VocabTrainer() {
               onClick={() => {
                 const next = direction === "tr-ru" ? "ru-tr" : "tr-ru";
                 setDirection(next);
-                pickNext(words, next);
+                pickNext(quizWords, next);
               }}
             >
               <ArrowLeftRight size={15} />
@@ -923,11 +969,13 @@ export default function VocabTrainer() {
             <span>{direction === "tr-ru" ? "Russian" : "Turkish"}</span>
           </div>
 
-          {words.length === 0 && (
-            <div className="vt-empty">No words yet. Add some in the Add or Text tab.</div>
+          {quizWords.length === 0 && (
+            <div className="vt-empty">
+              {quizFilter === "verbs" ? "No verbs yet. Add a Turkish verb (ending in -mek/-mak)." : "No words yet. Add some in the Add or Text tab."}
+            </div>
           )}
 
-          {words.length > 0 && current && (
+          {quizWords.length > 0 && current && (
             <div className="vt-card vt-flashcard">
               <div className="vt-flash-hint">{direction === "tr-ru" ? "translate to Russian" : "translate to Turkish"}</div>
               <div className="vt-flash-word">{quizForm ? quizForm.form : direction === "tr-ru" ? current.tr : current.ru}</div>
@@ -948,7 +996,7 @@ export default function VocabTrainer() {
                     <Check size={15} />
                   </button>
                 ) : (
-                  <button className="vt-btn vt-btn-primary" onClick={() => pickNext(words)}>
+                  <button className="vt-btn vt-btn-primary" onClick={() => pickNext(quizWords)}>
                     <Shuffle size={15} />
                   </button>
                 )}
@@ -963,7 +1011,7 @@ export default function VocabTrainer() {
             </div>
           )}
 
-          {words.length > 0 && (
+          {quizWords.length > 0 && (
             <div className="vt-stats-bar">
               <span>Correct: <b>{sessionStats.correct}</b></span>
               <span>Wrong: <b>{sessionStats.wrong}</b></span>
