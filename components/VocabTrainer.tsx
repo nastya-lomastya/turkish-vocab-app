@@ -16,6 +16,7 @@ import {
   Loader2,
   Image as ImageIcon,
   XCircle,
+  RefreshCw,
 } from "lucide-react";
 
 type VerbForm = { form: string; label: string; ru: string };
@@ -139,8 +140,20 @@ async function callClaudeVision(prompt: string, mediaType: string, data: string)
 }
 
 async function generateVerbForms(trWord: string): Promise<VerbForm[]> {
-  const prompt = `Турецкий глагол в инфинитиве: "${trWord}". Дай ровно 5 распространённых спрягаемых форм этого глагола, которые часто встречаются в живой речи: настоящее длительное время (-yor) я, прошедшее категорическое время я, будущее время я, настоящее-широкое время (aorist) я, повелительное наклонение ты (просто основа глагола). Для каждой формы также дай правильный перевод именно ЭТОЙ формы на русский язык, в том же лице и времени, БЕЗ местоимения (например, для формы "eleştiriyorum" перевод должен быть "критикую", а не "критиковать" и не "я критикую"; для будущего времени — "буду критиковать"). Ответь СТРОГО в виде JSON-массива из ровно 5 объектов вида [{"form":"eleştiriyorum","label":"наст. время, я","ru":"критикую"}], без markdown-разметки и без пояснений.`;
-  const raw = await callClaude(prompt);
+  const prompt = `Турецкий глагол в инфинитиве: "${trWord}".
+Дай полное спряжение этого глагола по всем 6 лицам (ben/sen/o/biz/siz/onlar) в следующих 4 конструкциях — это самые сложные для запоминания:
+1. Geniş zaman (аорист / широкое настоящее)
+2. Miş'li geçmiş zaman (прошедшее неопределённое, -miş)
+3. Gelecek zaman (будущее время)
+4. Şart kipi (условное наклонение)
+
+Итого ровно 24 формы (4 конструкции × 6 лиц). Для каждой формы дай:
+- "form" — турецкая спрягаемая форма;
+- "label" — краткое русское описание вида "аорист, я" / "аорист, ты" / "аорист, он/она" / "аорист, мы" / "аорист, вы" / "аорист, они" (аналогично для остальных конструкций, используя их русские названия: "прош. -miş", "буд. время", "условное накл.");
+- "ru" — правильный перевод именно этой формы на русский язык, в том же лице, БЕЗ местоимения-подлежащего (например, для аориста: "критикую" / "критикуешь" / "критикует" / "критикуем" / "критикуете" / "критикуют"; для условного наклонения используй конструкцию с "если", согласованную по лицу глагола: "если критикую" / "если критикуешь" и т.д.).
+
+Ответь СТРОГО в виде JSON-массива из ровно 24 объектов вида [{"form":"eleştiririm","label":"аорист, я","ru":"критикую"}], без markdown-разметки, без пояснений — только сам JSON-массив.`;
+  const raw = await callClaude(prompt, 1600);
   const arr = JSON.parse(stripFence(raw));
   return Array.isArray(arr) ? arr : [];
 }
@@ -149,6 +162,7 @@ export default function VocabTrainer() {
   const [words, setWords] = useState<Word[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("add");
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
 
   // Add tab state
   const [addDirection, setAddDirection] = useState<"tr-ru" | "ru-tr">("tr-ru");
@@ -436,6 +450,12 @@ export default function VocabTrainer() {
   async function deleteWord(id: string) {
     setWords((prev) => prev.filter((w) => w.id !== id));
     await apiDeleteWord(id);
+  }
+
+  async function regenerateForms(word: Word) {
+    setRegeneratingId(word.id);
+    await attachVerbForms(word.id, word.tr);
+    setRegeneratingId(null);
   }
 
   const sortedList = [...words].sort((a, b) => b.added - a.added);
@@ -970,6 +990,16 @@ export default function VocabTrainer() {
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
                 <span className="vt-list-score">✓{w.correct} ✗{w.wrong}</span>
+                {isVerb(w.tr) && (
+                  <button
+                    className="vt-del-btn"
+                    onClick={() => regenerateForms(w)}
+                    disabled={regeneratingId === w.id}
+                    title="Regenerate verb forms"
+                  >
+                    <RefreshCw size={16} className={regeneratingId === w.id ? "vt-spin" : ""} />
+                  </button>
+                )}
                 <button className="vt-del-btn" onClick={() => deleteWord(w.id)}>
                   <Trash2 size={16} />
                 </button>
