@@ -163,6 +163,7 @@ export default function VocabTrainer() {
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("add");
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [wordSearch, setWordSearch] = useState("");
 
   // Add tab state
   const [addDirection, setAddDirection] = useState<"tr-ru" | "ru-tr">("tr-ru");
@@ -466,6 +467,10 @@ export default function VocabTrainer() {
   }
 
   const sortedList = [...words].sort((a, b) => b.added - a.added);
+  const searchQuery = wordSearch.trim().toLowerCase();
+  const filteredList = searchQuery
+    ? sortedList.filter((w) => w.tr.toLowerCase().includes(searchQuery) || w.ru.toLowerCase().includes(searchQuery))
+    : sortedList;
 
   return (
     <div className="vt-root">
@@ -692,6 +697,20 @@ export default function VocabTrainer() {
           justify-content: center;
         }
         .vt-stats-bar b { color: var(--ink); }
+
+        .vt-search-row {
+          position: relative;
+          margin-bottom: 14px;
+        }
+        .vt-search-icon {
+          position: absolute;
+          left: 12px;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--ink-soft);
+          pointer-events: none;
+        }
+        .vt-search-input { padding-left: 36px; }
 
         .vt-quiz-filter {
           display: flex;
@@ -1021,9 +1040,21 @@ export default function VocabTrainer() {
       )}
 
       {tab === "list" && (
-        <div className="vt-card" style={{ padding: "4px" }}>
-          {sortedList.length === 0 && <div className="vt-empty">Your list is empty.</div>}
-          {sortedList.map((w) => (
+        <div>
+          <div className="vt-search-row">
+            <Search size={15} className="vt-search-icon" />
+            <input
+              className="vt-input vt-search-input"
+              value={wordSearch}
+              onChange={(e) => setWordSearch(e.target.value)}
+              placeholder="Search words..."
+            />
+          </div>
+          <div className="vt-card" style={{ padding: "4px" }}>
+            {filteredList.length === 0 && (
+              <div className="vt-empty">{searchQuery ? "No words match your search." : "Your list is empty."}</div>
+            )}
+            {filteredList.map((w) => (
             <div className="vt-list-item" key={w.id}>
               <div style={{ minWidth: 0 }}>
                 <div className="vt-list-word">{w.tr}</div>
@@ -1053,7 +1084,8 @@ export default function VocabTrainer() {
                 </button>
               </div>
             </div>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>
