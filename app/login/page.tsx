@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
+import { LANGUAGE } from "@/lib/language";
 
 export default function LoginPage() {
   const [password, setPassword] = useState("");
@@ -56,7 +57,7 @@ export default function LoginPage() {
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#26332B", fontWeight: 700, fontSize: "18px" }}>
-          <Lock size={18} /> Türkçe Kelimeler
+          <Lock size={18} /> {LANGUAGE.appTitle}
         </div>
         <input
           type="password"

@@ -1,8 +1,9 @@
 import "./globals.css";
+import { LANGUAGE } from "@/lib/language";
 
 export const metadata = {
-  title: "Türkçe Kelimeler",
-  description: "Личный тренажёр турецкой лексики",
+  title: LANGUAGE.appTitle,
+  description: `Личный тренажёр ${LANGUAGE.genitive} лексики`,
 };
 
 export const viewport = {

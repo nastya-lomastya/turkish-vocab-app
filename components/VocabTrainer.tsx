@@ -18,6 +18,7 @@ import {
   XCircle,
   RefreshCw,
 } from "lucide-react";
+import { LANGUAGE } from "@/lib/language";
 
 type VerbForm = { form: string; label: string; ru: string };
 type Word = {
@@ -39,7 +40,7 @@ function stripFence(s: string) {
 }
 
 function isVerb(trWord: string) {
-  return /(mek|mak)$/i.test((trWord || "").trim());
+  return LANGUAGE.verbSuffixRegex.test((trWord || "").trim());
 }
 
 function levenshtein(a: string, b: string): number {
@@ -140,19 +141,7 @@ async function callClaudeVision(prompt: string, mediaType: string, data: string)
 }
 
 async function generateVerbForms(trWord: string): Promise<VerbForm[]> {
-  const prompt = `Турецкий глагол в инфинитиве: "${trWord}".
-Дай полное спряжение этого глагола по всем 6 лицам (ben/sen/o/biz/siz/onlar) в следующих 4 конструкциях — это самые сложные для запоминания:
-1. Geniş zaman (аорист / широкое настоящее)
-2. Miş'li geçmiş zaman (прошедшее неопределённое, -miş)
-3. Gelecek zaman (будущее время)
-4. Şart kipi (условное наклонение)
-
-Итого ровно 24 формы (4 конструкции × 6 лиц). Для каждой формы дай:
-- "form" — турецкая спрягаемая форма;
-- "label" — краткое русское описание вида "аорист, я" / "аорист, ты" / "аорист, он/она" / "аорист, мы" / "аорист, вы" / "аорист, они" (аналогично для остальных конструкций, используя их русские названия: "прош. -miş", "буд. время", "условное накл.");
-- "ru" — правильный перевод именно этой формы на русский язык, в том же лице, БЕЗ местоимения-подлежащего (например, для аориста: "критикую" / "критикуешь" / "критикует" / "критикуем" / "критикуете" / "критикуют"; для условного наклонения используй конструкцию с "если", согласованную по лицу глагола: "если критикую" / "если критикуешь" и т.д.).
-
-Ответь СТРОГО в виде JSON-массива из ровно 24 объектов вида [{"form":"eleştiririm","label":"аорист, я","ru":"критикую"}], без markdown-разметки, без пояснений — только сам JSON-массив.`;
+  const prompt = LANGUAGE.verbFormsPrompt(trWord);
   const raw = await callClaude(prompt, 1600);
   const arr = JSON.parse(stripFence(raw));
   return Array.isArray(arr) ? arr : [];
@@ -221,8 +210,8 @@ export default function VocabTrainer() {
     try {
       const prompt =
         addDirection === "tr-ru"
-          ? `Переведи турецкое слово или короткую фразу "${newTr.trim()}" на русский язык одним словом или короткой формулировкой. Если это глагол, дай инфинитив. Ответь только переводом, без пояснений, кавычек и знаков препинания в конце.`
-          : `Переведи русское слово или короткую фразу "${newTr.trim()}" на турецкий язык одним словом или короткой формулировкой. Если это глагол, дай форму инфинитива (на -mak/-mek). Ответь только переводом, без пояснений, кавычек и знаков препинания в конце.`;
+          ? `Переведи ${LANGUAGE.adjN} слово или короткую фразу "${newTr.trim()}" на русский язык одним словом или короткой формулировкой. Если это глагол, дай инфинитив. Ответь только переводом, без пояснений, кавычек и знаков препинания в конце.`
+          : `Переведи русское слово или короткую фразу "${newTr.trim()}" на ${LANGUAGE.adjM} язык одним словом или короткой формулировкой. Если это глагол, дай начальную форму (инфинитив). Ответь только переводом, без пояснений, кавычек и знаков препинания в конце.`;
       const result = await callClaude(prompt);
       setNewRu(result);
     } catch (e) {
@@ -286,7 +275,7 @@ export default function VocabTrainer() {
 
   // ---- text tab ----
   function handleExtract() {
-    const found: string[] = pastedText.match(/[a-zA-ZçÇğĞıİöÖşŞüÜ]+/g) || [];
+    const found: string[] = pastedText.match(LANGUAGE.extractRegex) || [];
     const seen = new Set<string>();
     const unique: string[] = [];
     found.forEach((w) => {
@@ -318,7 +307,7 @@ export default function VocabTrainer() {
     }
     setBatchLoading(true);
     try {
-      const prompt = `Переведи список турецких слов на русский язык. Слова: ${JSON.stringify(
+      const prompt = `Переведи список ${LANGUAGE.genitive} слов на русский язык. Слова: ${JSON.stringify(
         toAdd
       )}. Ответь СТРОГО в виде JSON-объекта вида {"слово":"перевод"} без markdown-разметки, без пояснений, только сам JSON.`;
       const raw = await callClaude(prompt);
@@ -372,7 +361,7 @@ export default function VocabTrainer() {
       const mediaType = match[1];
       const base64 = match[2];
       const text = await callClaudeVision(
-        'Найди на этой фотографии турецкий текст и выпиши отдельные турецкие слова из него (в начальной форме где возможно, в нижнем регистре, без повторов, без чисел). Ответь СТРОГО в виде JSON-массива строк, без markdown-разметки и пояснений, например: ["kelime","kitap"]',
+        `Найди на этой фотографии ${LANGUAGE.adjM} текст и выпиши отдельные ${LANGUAGE.genitive} слова из него (в начальной форме где возможно, в нижнем регистре, без повторов, без чисел). Ответь СТРОГО в виде JSON-массива строк, без markdown-разметки и пояснений, например: ["mot","livre"]`,
         mediaType,
         base64
       );
@@ -831,7 +820,7 @@ export default function VocabTrainer() {
       `}</style>
 
       <div className="vt-header">
-        <span className="vt-title">Türkçe Kelimeler</span>
+        <span className="vt-title">{LANGUAGE.appTitle}</span>
         <span className="vt-count">{words.length} words</span>
       </div>
 
@@ -853,7 +842,7 @@ export default function VocabTrainer() {
       {tab === "add" && (
         <div className="vt-card">
           <div className="vt-direction-toggle" style={{ marginBottom: 16 }}>
-            <span className="on">{addDirection === "tr-ru" ? "Turkish" : "Russian"}</span>
+            <span className="on">{addDirection === "tr-ru" ? LANGUAGE.name : "Russian"}</span>
             <button
               className="vt-btn vt-btn-ghost"
               style={{ padding: "7px" }}
@@ -866,17 +855,17 @@ export default function VocabTrainer() {
             >
               <ArrowLeftRight size={15} />
             </button>
-            <span>{addDirection === "tr-ru" ? "Russian" : "Turkish"}</span>
+            <span>{addDirection === "tr-ru" ? "Russian" : LANGUAGE.name}</span>
           </div>
 
           <div className="vt-row">
             <div>
-              <span className="vt-field-label">{addDirection === "tr-ru" ? "Turkish word" : "Russian word"}</span>
+              <span className="vt-field-label">{addDirection === "tr-ru" ? `${LANGUAGE.name} word` : "Russian word"}</span>
               <input
                 className="vt-input"
                 value={newTr}
                 onChange={(e) => setNewTr(e.target.value)}
-                placeholder={addDirection === "tr-ru" ? "e.g. yorgun" : "e.g. tired"}
+                placeholder={addDirection === "tr-ru" ? `e.g. ${LANGUAGE.wordExample}` : `e.g. ${LANGUAGE.wordExampleRu}`}
               />
             </div>
             <button className="vt-btn vt-btn-ghost vt-btn-block" onClick={handleLookup} disabled={lookupLoading || !newTr.trim()}>
@@ -886,12 +875,12 @@ export default function VocabTrainer() {
           </div>
           <div className="vt-row">
             <div>
-              <span className="vt-field-label">{addDirection === "tr-ru" ? "Russian translation" : "Turkish translation"}</span>
+              <span className="vt-field-label">{addDirection === "tr-ru" ? "Russian translation" : `${LANGUAGE.name} translation`}</span>
               <input
                 className="vt-input"
                 value={newRu}
                 onChange={(e) => setNewRu(e.target.value)}
-                placeholder={addDirection === "tr-ru" ? "e.g. tired" : "e.g. yorgun"}
+                placeholder={addDirection === "tr-ru" ? `e.g. ${LANGUAGE.wordExampleRu}` : `e.g. ${LANGUAGE.wordExample}`}
               />
             </div>
           </div>
@@ -904,12 +893,12 @@ export default function VocabTrainer() {
 
       {tab === "text" && (
         <div className="vt-card">
-          <span className="vt-field-label">Paste Turkish text</span>
+          <span className="vt-field-label">Paste {LANGUAGE.name} text</span>
           <textarea
             className="vt-textarea"
             value={pastedText}
             onChange={(e) => setPastedText(e.target.value)}
-            placeholder="Paste a paragraph or a couple of sentences in Turkish..."
+            placeholder={`Paste a paragraph or a couple of sentences in ${LANGUAGE.name}...`}
           />
           <div style={{ marginTop: 10 }}>
             <button className="vt-btn vt-btn-ghost vt-btn-block" onClick={handleExtract} disabled={!pastedText.trim()}>
@@ -990,7 +979,7 @@ export default function VocabTrainer() {
           </div>
 
           <div className="vt-direction-toggle">
-            <span className="on">{direction === "tr-ru" ? "Turkish" : "Russian"}</span>
+            <span className="on">{direction === "tr-ru" ? LANGUAGE.name : "Russian"}</span>
             <button
               className="vt-btn vt-btn-ghost"
               style={{ padding: "7px" }}
@@ -1002,18 +991,18 @@ export default function VocabTrainer() {
             >
               <ArrowLeftRight size={15} />
             </button>
-            <span>{direction === "tr-ru" ? "Russian" : "Turkish"}</span>
+            <span>{direction === "tr-ru" ? "Russian" : LANGUAGE.name}</span>
           </div>
 
           {quizWords.length === 0 && (
             <div className="vt-empty">
-              {quizFilter === "verbs" ? "No verbs yet. Add a Turkish verb (ending in -mek/-mak)." : "No words yet. Add some in the Add or Text tab."}
+              {quizFilter === "verbs" ? `No verbs yet. Add a ${LANGUAGE.name} verb.` : "No words yet. Add some in the Add or Text tab."}
             </div>
           )}
 
           {quizWords.length > 0 && current && (
             <div className="vt-card vt-flashcard">
-              <div className="vt-flash-hint">{direction === "tr-ru" ? "translate to Russian" : "translate to Turkish"}</div>
+              <div className="vt-flash-hint">{direction === "tr-ru" ? "translate to Russian" : `translate to ${LANGUAGE.name}`}</div>
               <div className="vt-flash-word">
                 {direction === "tr-ru"
                   ? quizForm
