@@ -56,8 +56,20 @@ export default function LoginPage() {
           gap: "14px",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "#26332B", fontWeight: 700, fontSize: "18px" }}>
-          <Lock size={18} /> {LANGUAGE.appTitle}
+        <img
+          src="/bulka.png"
+          alt=""
+          style={{
+            width: "72px",
+            height: "72px",
+            borderRadius: "50%",
+            objectFit: "cover",
+            alignSelf: "center",
+            marginBottom: "4px",
+          }}
+        />
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", color: "#26332B", fontWeight: 700, fontSize: "18px" }}>
+          <Lock size={16} /> {LANGUAGE.appTitle}
         </div>
         <input
           type="password"
