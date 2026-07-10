@@ -29,6 +29,7 @@ type Word = {
   correct: number;
   wrong: number;
   forms: VerbForm[];
+  transcription: string;
 };
 
 function uid() {
@@ -84,6 +85,7 @@ async function apiListWords(): Promise<Word[]> {
     ...w,
     added: Number(w.added),
     forms: w.forms || [],
+    transcription: w.transcription || "",
   }));
 }
 
@@ -96,7 +98,7 @@ async function apiAddWord(word: Word) {
   if (res.status === 401) redirectToLogin();
 }
 
-async function apiUpdateWord(id: string, patch: Partial<Pick<Word, "forms" | "correct" | "wrong">>) {
+async function apiUpdateWord(id: string, patch: Partial<Pick<Word, "forms" | "correct" | "wrong" | "transcription">>) {
   const res = await fetch(`/api/words/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -158,6 +160,7 @@ export default function VocabTrainer() {
   const [addDirection, setAddDirection] = useState<"tr-ru" | "ru-tr">("tr-ru");
   const [newTr, setNewTr] = useState("");
   const [newRu, setNewRu] = useState("");
+  const [newTranscription, setNewTranscription] = useState("");
   const [lookupLoading, setLookupLoading] = useState(false);
   const [addMsg, setAddMsg] = useState("");
 
@@ -210,10 +213,12 @@ export default function VocabTrainer() {
     try {
       const prompt =
         addDirection === "tr-ru"
-          ? `Переведи ${LANGUAGE.adjN} слово или короткую фразу "${newTr.trim()}" на русский язык одним словом или короткой формулировкой. Если это глагол, дай инфинитив. Ответь только переводом, без пояснений, кавычек и знаков препинания в конце.`
-          : `Переведи русское слово или короткую фразу "${newTr.trim()}" на ${LANGUAGE.adjM} язык одним словом или короткой формулировкой. Если это глагол, дай начальную форму (инфинитив). Ответь только переводом, без пояснений, кавычек и знаков препинания в конце.`;
-      const result = await callClaude(prompt);
-      setNewRu(result);
+          ? `Слово или короткая фраза на ${LANGUAGE.adjN} языке: "${newTr.trim()}". Дай: 1) перевод на русский язык одним словом или короткой формулировкой (если это глагол — инфинитив); 2) приближённую фонетическую транскрипцию ЭТОГО ${LANGUAGE.adjN} слова кириллицей — как оно реально произносится (с учётом немых букв и т.п.), обычными русскими буквами, без специальных фонетических символов. Ответь СТРОГО в виде JSON-объекта {"translation":"...","transcription":"..."}, без markdown-разметки и пояснений.`
+          : `Переведи русское слово или короткую фразу "${newTr.trim()}" на ${LANGUAGE.adjM} язык одним словом или короткой формулировкой (если это глагол — начальная форма/инфинитив). Также дай приближённую фонетическую транскрипцию получившегося ${LANGUAGE.adjN} слова кириллицей — как оно реально произносится, обычными русскими буквами, без специальных фонетических символов. Ответь СТРОГО в виде JSON-объекта {"translation":"...","transcription":"..."}, без markdown-разметки и пояснений.`;
+      const raw = await callClaude(prompt);
+      const parsed = JSON.parse(stripFence(raw));
+      setNewRu(parsed.translation || "");
+      setNewTranscription(parsed.transcription || "");
     } catch (e) {
       setAddMsg("Couldn't find a translation, enter it manually.");
     }
@@ -256,11 +261,13 @@ export default function VocabTrainer() {
       correct: 0,
       wrong: 0,
       forms: [],
+      transcription: newTranscription.trim(),
     };
     setWords((prev) => [word, ...prev]);
     await apiAddWord(word);
     setNewTr("");
     setNewRu("");
+    setNewTranscription("");
     if (isVerb(trWord)) {
       setAddMsg("Added! Fetching verb forms...");
       attachVerbForms(word.id, trWord).then(() => {
@@ -307,19 +314,20 @@ export default function VocabTrainer() {
     }
     setBatchLoading(true);
     try {
-      const prompt = `Переведи список ${LANGUAGE.genitive} слов на русский язык. Слова: ${JSON.stringify(
+      const prompt = `Переведи список ${LANGUAGE.genitive} слов на русский язык, и для каждого слова дай приближённую фонетическую транскрипцию кириллицей (как оно реально произносится, обычными русскими буквами, без спецсимволов). Слова: ${JSON.stringify(
         toAdd
-      )}. Ответь СТРОГО в виде JSON-объекта вида {"слово":"перевод"} без markdown-разметки, без пояснений, только сам JSON.`;
+      )}. Ответь СТРОГО в виде JSON-объекта вида {"слово":{"ru":"перевод","transcription":"транскрипция"}} без markdown-разметки, без пояснений, только сам JSON.`;
       const raw = await callClaude(prompt);
       const map = JSON.parse(stripFence(raw));
       const newWords: Word[] = toAdd.map((w) => ({
         id: uid(),
         tr: w,
-        ru: map[w] || "",
+        ru: map[w]?.ru || "",
         added: Date.now(),
         correct: 0,
         wrong: 0,
         forms: [],
+        transcription: map[w]?.transcription || "",
       }));
       setWords((prev) => [...newWords, ...prev]);
       await Promise.all(newWords.map((w) => apiAddWord(w)));
@@ -768,6 +776,7 @@ export default function VocabTrainer() {
         }
         .vt-list-item:last-child { border-bottom: none; }
         .vt-list-word { font-weight: 600; font-size: 14.5px; }
+        .vt-list-transcription { font-weight: 400; color: var(--ink-soft); font-style: italic; }
         .vt-list-tr { font-size: 13px; color: var(--ink-soft); }
         .vt-verb-badge {
           display: inline-block;
@@ -850,6 +859,7 @@ export default function VocabTrainer() {
                 setAddDirection((d) => (d === "tr-ru" ? "ru-tr" : "tr-ru"));
                 setNewTr("");
                 setNewRu("");
+                setNewTranscription("");
                 setAddMsg("");
               }}
             >
@@ -881,6 +891,17 @@ export default function VocabTrainer() {
                 value={newRu}
                 onChange={(e) => setNewRu(e.target.value)}
                 placeholder={addDirection === "tr-ru" ? `e.g. ${LANGUAGE.wordExampleRu}` : `e.g. ${LANGUAGE.wordExample}`}
+              />
+            </div>
+          </div>
+          <div className="vt-row">
+            <div>
+              <span className="vt-field-label">Pronunciation (optional)</span>
+              <input
+                className="vt-input"
+                value={newTranscription}
+                onChange={(e) => setNewTranscription(e.target.value)}
+                placeholder="напр. бокУ"
               />
             </div>
           </div>
@@ -1012,6 +1033,9 @@ export default function VocabTrainer() {
                   ? quizForm.ru
                   : current.ru}
               </div>
+              {!quizForm && direction === "tr-ru" && current.transcription && (
+                <div className="vt-flash-hint" style={{ marginTop: 4 }}>[{current.transcription}]</div>
+              )}
               {quizForm && <div className="vt-flash-formlabel">{quizForm.label}</div>}
 
               <div className="vt-quiz-input-row">
@@ -1071,7 +1095,10 @@ export default function VocabTrainer() {
             {filteredList.map((w) => (
             <div className="vt-list-item" key={w.id}>
               <div style={{ minWidth: 0 }}>
-                <div className="vt-list-word">{w.tr}</div>
+                <div className="vt-list-word">
+                  {w.tr}
+                  {w.transcription && <span className="vt-list-transcription"> [{w.transcription}]</span>}
+                </div>
                 <div className="vt-list-tr">
                   {w.ru}
                   {w.forms && w.forms.length > 0 && (

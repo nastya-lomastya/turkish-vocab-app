@@ -20,9 +20,10 @@ export function ensureTable() {
         added BIGINT NOT NULL,
         correct INT NOT NULL DEFAULT 0,
         wrong INT NOT NULL DEFAULT 0,
-        forms JSONB NOT NULL DEFAULT '[]'
+        forms JSONB NOT NULL DEFAULT '[]',
+        transcription TEXT NOT NULL DEFAULT ''
       )
-    `;
+    `.then(() => sql`ALTER TABLE words ADD COLUMN IF NOT EXISTS transcription TEXT NOT NULL DEFAULT ''`);
   }
   return tableReady;
 }
