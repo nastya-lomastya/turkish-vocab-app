@@ -236,8 +236,24 @@ export default function VocabTrainer() {
       setAddMsg("Fill in both fields.");
       return;
     }
-    const trWord = addDirection === "tr-ru" ? newTr.trim() : newRu.trim();
-    const ruWord = addDirection === "tr-ru" ? newRu.trim() : newTr.trim();
+    const a = newTr.trim();
+    const b = newRu.trim();
+    const aIsRu = /[а-яёА-ЯЁ]/.test(a);
+    const bIsRu = /[а-яёА-ЯЁ]/.test(b);
+    // Detect by script first (Cyrillic = Russian) so the word lands in the
+    // right field even if the direction toggle wasn't set the way it was typed.
+    let trWord: string;
+    let ruWord: string;
+    if (aIsRu && !bIsRu) {
+      trWord = b;
+      ruWord = a;
+    } else if (bIsRu && !aIsRu) {
+      trWord = a;
+      ruWord = b;
+    } else {
+      trWord = addDirection === "tr-ru" ? a : b;
+      ruWord = addDirection === "tr-ru" ? b : a;
+    }
     const exists = words.some((w) => w.tr.toLowerCase() === trWord.toLowerCase());
     if (exists) {
       setAddMsg("This word is already in your list.");
@@ -405,7 +421,7 @@ export default function VocabTrainer() {
     const pool = list.length > 1 && current ? list.filter((w) => w.id !== current.id) : list;
     const pick = pickWeighted(pool);
     setCurrent(pick);
-    if (useDirection === "tr-ru" && pick.forms && pick.forms.length > 0 && Math.random() < 0.6) {
+    if (pick.forms && pick.forms.length > 0 && Math.random() < 0.6) {
       setQuizForm(pick.forms[Math.floor(Math.random() * pick.forms.length)]);
     } else {
       setQuizForm(null);
@@ -430,7 +446,8 @@ export default function VocabTrainer() {
 
   async function checkAnswer() {
     if (!current) return;
-    const promptAnswer = direction === "tr-ru" ? quizForm?.ru || current.ru : current.tr;
+    const promptAnswer =
+      direction === "tr-ru" ? quizForm?.ru || current.ru : quizForm?.form || current.tr;
     const variants = promptAnswer
       .split(/[,;/]/)
       .map((s) => s.trim().toLowerCase())
@@ -466,7 +483,7 @@ export default function VocabTrainer() {
     setRegeneratingId(null);
   }
 
-  const sortedList = [...words].sort((a, b) => b.added - a.added);
+  const sortedList = [...words].sort((a, b) => a.tr.localeCompare(b.tr, "tr"));
   const searchQuery = wordSearch.trim().toLowerCase();
   const filteredList = searchQuery
     ? sortedList.filter((w) => w.tr.toLowerCase().includes(searchQuery) || w.ru.toLowerCase().includes(searchQuery))
@@ -997,7 +1014,15 @@ export default function VocabTrainer() {
           {quizWords.length > 0 && current && (
             <div className="vt-card vt-flashcard">
               <div className="vt-flash-hint">{direction === "tr-ru" ? "translate to Russian" : "translate to Turkish"}</div>
-              <div className="vt-flash-word">{quizForm ? quizForm.form : direction === "tr-ru" ? current.tr : current.ru}</div>
+              <div className="vt-flash-word">
+                {direction === "tr-ru"
+                  ? quizForm
+                    ? quizForm.form
+                    : current.tr
+                  : quizForm
+                  ? quizForm.ru
+                  : current.ru}
+              </div>
               {quizForm && <div className="vt-flash-formlabel">{quizForm.label}</div>}
 
               <div className="vt-quiz-input-row">
