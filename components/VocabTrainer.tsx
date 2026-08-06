@@ -418,7 +418,7 @@ export default function VocabTrainer() {
     const pool = list.length > 1 && current ? list.filter((w) => w.id !== current.id) : list;
     const pick = pickWeighted(pool);
     setCurrent(pick);
-    if (pick.forms && pick.forms.length > 0 && Math.random() < 0.6) {
+    if (quizFilter === "verbs" && pick.forms && pick.forms.length > 0 && Math.random() < 0.6) {
       setQuizForm(pick.forms[Math.floor(Math.random() * pick.forms.length)]);
     } else {
       setQuizForm(null);
@@ -987,13 +987,21 @@ export default function VocabTrainer() {
           <div className="vt-quiz-filter">
             <button
               className={`vt-filter-btn ${quizFilter === "all" ? "active" : ""}`}
-              onClick={() => setQuizFilter("all")}
+              onClick={() => {
+                setQuizFilter("all");
+                setCurrent(null);
+                setQuizForm(null);
+              }}
             >
               All
             </button>
             <button
               className={`vt-filter-btn ${quizFilter === "verbs" ? "active" : ""}`}
-              onClick={() => setQuizFilter("verbs")}
+              onClick={() => {
+                setQuizFilter("verbs");
+                setCurrent(null);
+                setQuizForm(null);
+              }}
             >
               Verbs
             </button>
