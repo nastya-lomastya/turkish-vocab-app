@@ -112,6 +112,34 @@ async function apiDeleteWord(id: string) {
   if (res.status === 401) redirectToLogin();
 }
 
+async function apiGetStreak(): Promise<{ day: string; seconds: number }[]> {
+  const res = await fetch("/api/streak");
+  if (res.status === 401) {
+    redirectToLogin();
+    return [];
+  }
+  const json = await res.json();
+  return json.days || [];
+}
+
+async function apiAddStreakSeconds(day: string, deltaSeconds: number) {
+  const res = await fetch("/api/streak", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ day, deltaSeconds }),
+  });
+  if (res.status === 401) redirectToLogin();
+}
+
+function localDayKey(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+const STREAK_GOAL_SECONDS = 600;
+
 async function callClaude(prompt: string, maxTokens?: number): Promise<string> {
   const res = await fetch("/api/claude", {
     method: "POST",
@@ -183,6 +211,9 @@ export default function VocabTrainer() {
   const [sessionStats, setSessionStats] = useState({ correct: 0, wrong: 0 });
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Streak state
+  const [streakDays, setStreakDays] = useState<Record<string, number>>({});
+
   // ---- load from server on mount ----
   useEffect(() => {
     (async () => {
@@ -193,6 +224,16 @@ export default function VocabTrainer() {
         // best-effort
       }
       setLoaded(true);
+    })();
+    (async () => {
+      try {
+        const days = await apiGetStreak();
+        const map: Record<string, number> = {};
+        days.forEach((d) => (map[d.day] = d.seconds));
+        setStreakDays(map);
+      } catch (e) {
+        // best-effort
+      }
     })();
   }, []);
 
@@ -441,6 +482,20 @@ export default function VocabTrainer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, loaded, quizWords.length, quizFilter]);
 
+  // Streak: while actively on the quiz tab (and the page is visible), count
+  // active seconds toward today's goal and persist them every 5s.
+  useEffect(() => {
+    if (tab !== "quiz" || quizWords.length === 0) return;
+    const tick = () => {
+      if (document.visibilityState !== "visible") return;
+      const key = localDayKey();
+      setStreakDays((prev) => ({ ...prev, [key]: (prev[key] || 0) + 5 }));
+      apiAddStreakSeconds(key, 5);
+    };
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
+  }, [tab, quizWords.length]);
+
   async function checkAnswer() {
     if (!current) return;
     const promptAnswer =
@@ -485,6 +540,26 @@ export default function VocabTrainer() {
   const filteredList = searchQuery
     ? sortedList.filter((w) => w.tr.toLowerCase().includes(searchQuery) || w.ru.toLowerCase().includes(searchQuery))
     : sortedList;
+
+  // Streak: last 30 days for the grid, plus the current run of consecutive
+  // completed days (today only counts once it hits the goal itself).
+  const todayKey = localDayKey();
+  const last30 = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (29 - i));
+    const key = localDayKey(d);
+    return { key, seconds: streakDays[key] || 0, isToday: key === todayKey };
+  });
+  let streakCount = 0;
+  for (let i = last30.length - 1; i >= 0; i--) {
+    const day = last30[i];
+    if (day.seconds >= STREAK_GOAL_SECONDS) {
+      streakCount++;
+    } else if (!day.isToday) {
+      break;
+    }
+  }
+  const todaySeconds = streakDays[todayKey] || 0;
 
   return (
     <div className="vt-root">
@@ -725,6 +800,42 @@ export default function VocabTrainer() {
           pointer-events: none;
         }
         .vt-search-input { padding-left: 36px; }
+
+        .vt-streak-bar {
+          background: var(--paper-deep);
+          border-radius: 12px;
+          padding: 12px 14px;
+          margin-bottom: 14px;
+        }
+        .vt-streak-summary {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          font-size: 13px;
+          color: var(--ink-soft);
+          margin-bottom: 8px;
+        }
+        .vt-streak-summary b { color: var(--ink); font-size: 15px; }
+        .vt-streak-flame { font-size: 18px; line-height: 1; }
+        .vt-streak-today {
+          margin-left: auto;
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 11.5px;
+        }
+        .vt-streak-grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 4px;
+        }
+        .vt-streak-day {
+          width: 12px;
+          height: 12px;
+          border-radius: 3px;
+          background: var(--sand-line);
+        }
+        .vt-streak-day.done { background: var(--tile-blue); }
+        .vt-streak-day.today { box-shadow: 0 0 0 1.5px var(--tile-blue-deep); }
 
         .vt-quiz-filter {
           display: flex;
@@ -984,6 +1095,29 @@ export default function VocabTrainer() {
 
       {tab === "quiz" && (
         <div>
+          <div className="vt-streak-bar">
+            <div className="vt-streak-summary">
+              <span className="vt-streak-flame">{streakCount > 0 ? "🔥" : "🕯️"}</span>
+              <span>
+                <b>{streakCount}</b> day{streakCount === 1 ? "" : "s"} streak
+              </span>
+              <span className="vt-streak-today">
+                {todaySeconds >= STREAK_GOAL_SECONDS
+                  ? "Today's goal done!"
+                  : `${Math.floor(todaySeconds / 60)}:${String(todaySeconds % 60).padStart(2, "0")} / 10:00 today`}
+              </span>
+            </div>
+            <div className="vt-streak-grid">
+              {last30.map((d) => (
+                <span
+                  key={d.key}
+                  className={`vt-streak-day ${d.seconds >= STREAK_GOAL_SECONDS ? "done" : ""} ${d.isToday ? "today" : ""}`}
+                  title={d.key}
+                />
+              ))}
+            </div>
+          </div>
+
           <div className="vt-quiz-filter">
             <button
               className={`vt-filter-btn ${quizFilter === "all" ? "active" : ""}`}

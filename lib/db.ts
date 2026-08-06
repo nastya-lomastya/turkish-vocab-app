@@ -27,3 +27,18 @@ export function ensureTable() {
   }
   return tableReady;
 }
+
+let streakTableReady: Promise<unknown> | null = null;
+
+// One row per calendar day (client's local date), tracking active quiz seconds.
+export function ensureStreakTable() {
+  if (!streakTableReady) {
+    streakTableReady = sql`
+      CREATE TABLE IF NOT EXISTS streak_days (
+        day TEXT PRIMARY KEY,
+        seconds INT NOT NULL DEFAULT 0
+      )
+    `;
+  }
+  return streakTableReady;
+}
