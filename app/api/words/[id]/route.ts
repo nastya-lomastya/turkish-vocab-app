@@ -6,9 +6,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params;
   const body = await req.json();
 
-  if (body.forms !== undefined) {
-    await sql`UPDATE words SET forms = ${JSON.stringify(body.forms)} WHERE id = ${id}`;
-  }
   if (body.correct !== undefined && body.wrong !== undefined) {
     await sql`UPDATE words SET correct = ${body.correct}, wrong = ${body.wrong} WHERE id = ${id}`;
   }

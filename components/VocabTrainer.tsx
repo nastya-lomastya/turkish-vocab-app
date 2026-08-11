@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Plus,
   Search,
@@ -16,11 +16,9 @@ import {
   Loader2,
   Image as ImageIcon,
   XCircle,
-  RefreshCw,
 } from "lucide-react";
-import { LANGUAGE } from "@/lib/language";
+import { LANGUAGE, NATIVE } from "@/lib/language";
 
-type VerbForm = { form: string; label: string; ru: string };
 type Word = {
   id: string;
   tr: string;
@@ -28,7 +26,6 @@ type Word = {
   added: number;
   correct: number;
   wrong: number;
-  forms: VerbForm[];
   transcription: string;
 };
 
@@ -38,10 +35,6 @@ function uid() {
 
 function stripFence(s: string) {
   return s.replace(/```json|```/g, "").trim();
-}
-
-function isVerb(trWord: string) {
-  return LANGUAGE.verbSuffixRegex.test((trWord || "").trim());
 }
 
 function levenshtein(a: string, b: string): number {
@@ -84,7 +77,6 @@ async function apiListWords(): Promise<Word[]> {
   return (json.words || []).map((w: any) => ({
     ...w,
     added: Number(w.added),
-    forms: w.forms || [],
     transcription: w.transcription || "",
   }));
 }
@@ -98,7 +90,7 @@ async function apiAddWord(word: Word) {
   if (res.status === 401) redirectToLogin();
 }
 
-async function apiUpdateWord(id: string, patch: Partial<Pick<Word, "forms" | "correct" | "wrong" | "transcription">>) {
+async function apiUpdateWord(id: string, patch: Partial<Pick<Word, "correct" | "wrong" | "transcription">>) {
   const res = await fetch(`/api/words/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -170,18 +162,10 @@ async function callClaudeVision(prompt: string, mediaType: string, data: string)
   return json.text as string;
 }
 
-async function generateVerbForms(trWord: string): Promise<VerbForm[]> {
-  const prompt = LANGUAGE.verbFormsPrompt(trWord);
-  const raw = await callClaude(prompt, 1600);
-  const arr = JSON.parse(stripFence(raw));
-  return Array.isArray(arr) ? arr : [];
-}
-
 export default function VocabTrainer() {
   const [words, setWords] = useState<Word[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("add");
-  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [wordSearch, setWordSearch] = useState("");
 
   // Add tab state
@@ -202,10 +186,8 @@ export default function VocabTrainer() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Quiz tab state
-  const [quizFilter, setQuizFilter] = useState<"all" | "verbs">("all");
   const [direction, setDirection] = useState<"tr-ru" | "ru-tr">("tr-ru");
   const [current, setCurrent] = useState<Word | null>(null);
-  const [quizForm, setQuizForm] = useState<VerbForm | null>(null);
   const [answer, setAnswer] = useState("");
   const [feedback, setFeedback] = useState<{ correct: boolean; correctAnswer: string } | null>(null);
   const [sessionStats, setSessionStats] = useState({ correct: 0, wrong: 0 });
@@ -237,15 +219,6 @@ export default function VocabTrainer() {
     })();
   }, []);
 
-  const attachVerbForms = useCallback(async (wordId: string, trWord: string) => {
-    try {
-      const forms = await generateVerbForms(trWord);
-      setWords((prev) => prev.map((w) => (w.id === wordId ? { ...w, forms } : w)));
-      await apiUpdateWord(wordId, { forms });
-    } catch (e) {
-      // word just stays without forms
-    }
-  }, []);
 
   // ---- add tab ----
   async function handleLookup() {
@@ -254,8 +227,8 @@ export default function VocabTrainer() {
     try {
       const prompt =
         addDirection === "tr-ru"
-          ? `Слово или короткая фраза на ${LANGUAGE.adjN} языке: "${newTr.trim()}". Дай: 1) перевод на русский язык одним словом или короткой формулировкой (если это глагол — инфинитив); 2) приближённую фонетическую транскрипцию ЭТОГО ${LANGUAGE.adjN} слова кириллицей — как оно реально произносится (с учётом немых букв и т.п.), обычными русскими буквами, без специальных фонетических символов. Ответь СТРОГО в виде JSON-объекта {"translation":"...","transcription":"..."}, без markdown-разметки и пояснений.`
-          : `Переведи русское слово или короткую фразу "${newTr.trim()}" на ${LANGUAGE.adjM} язык одним словом или короткой формулировкой (если это глагол — начальная форма/инфинитив). Также дай приближённую фонетическую транскрипцию получившегося ${LANGUAGE.adjN} слова кириллицей — как оно реально произносится, обычными русскими буквами, без специальных фонетических символов. Ответь СТРОГО в виде JSON-объекта {"translation":"...","transcription":"..."}, без markdown-разметки и пояснений.`;
+          ? `Слово или короткая фраза на ${LANGUAGE.adjN} языке: "${newTr.trim()}". Дай: 1) перевод на ${NATIVE.adjM} язык одним словом или короткой формулировкой (если это глагол — инфинитив); 2) приближённую фонетическую транскрипцию ЭТОГО ${LANGUAGE.adjN} слова ${NATIVE.transcriptionInstruction}. Ответь СТРОГО в виде JSON-объекта {"translation":"...","transcription":"..."}, без markdown-разметки и пояснений.`
+          : `Переведи ${NATIVE.adjN} слово или короткую фразу "${newTr.trim()}" на ${LANGUAGE.adjM} язык одним словом или короткой формулировкой (если это глагол — начальная форма/инфинитив). Также дай приближённую фонетическую транскрипцию получившегося ${LANGUAGE.adjN} слова ${NATIVE.transcriptionInstruction}. Ответь СТРОГО в виде JSON-объекта {"translation":"...","transcription":"..."}, без markdown-разметки и пояснений.`;
       const raw = await callClaude(prompt);
       const parsed = JSON.parse(stripFence(raw));
       setNewRu(parsed.translation || "");
@@ -273,18 +246,25 @@ export default function VocabTrainer() {
     }
     const a = newTr.trim();
     const b = newRu.trim();
-    const aIsRu = /[а-яёА-ЯЁ]/.test(a);
-    const bIsRu = /[а-яёА-ЯЁ]/.test(b);
-    // Detect by script first (Cyrillic = Russian) so the word lands in the
-    // right field even if the direction toggle wasn't set the way it was typed.
     let trWord: string;
     let ruWord: string;
-    if (aIsRu && !bIsRu) {
-      trWord = b;
-      ruWord = a;
-    } else if (bIsRu && !aIsRu) {
-      trWord = a;
-      ruWord = b;
+    if (NATIVE.scriptRegex) {
+      // Detect by script first (e.g. Cyrillic = Russian) so the word lands
+      // in the right field even if the direction toggle wasn't set the way
+      // it was typed. Only possible when the native language's script
+      // doesn't overlap with the foreign language's Latin alphabet.
+      const aIsNative = NATIVE.scriptRegex.test(a);
+      const bIsNative = NATIVE.scriptRegex.test(b);
+      if (aIsNative && !bIsNative) {
+        trWord = b;
+        ruWord = a;
+      } else if (bIsNative && !aIsNative) {
+        trWord = a;
+        ruWord = b;
+      } else {
+        trWord = addDirection === "tr-ru" ? a : b;
+        ruWord = addDirection === "tr-ru" ? b : a;
+      }
     } else {
       trWord = addDirection === "tr-ru" ? a : b;
       ruWord = addDirection === "tr-ru" ? b : a;
@@ -301,7 +281,6 @@ export default function VocabTrainer() {
       added: Date.now(),
       correct: 0,
       wrong: 0,
-      forms: [],
       transcription: newTranscription.trim(),
     };
     setWords((prev) => [word, ...prev]);
@@ -309,16 +288,8 @@ export default function VocabTrainer() {
     setNewTr("");
     setNewRu("");
     setNewTranscription("");
-    if (isVerb(trWord)) {
-      setAddMsg("Added! Fetching verb forms...");
-      attachVerbForms(word.id, trWord).then(() => {
-        setAddMsg("Verb forms added!");
-        setTimeout(() => setAddMsg(""), 1800);
-      });
-    } else {
-      setAddMsg("Added!");
-      setTimeout(() => setAddMsg(""), 1500);
-    }
+    setAddMsg("Added!");
+    setTimeout(() => setAddMsg(""), 1500);
   }
 
   // ---- text tab ----
@@ -355,7 +326,7 @@ export default function VocabTrainer() {
     }
     setBatchLoading(true);
     try {
-      const prompt = `Переведи список ${LANGUAGE.genitive} слов на русский язык, и для каждого слова дай приближённую фонетическую транскрипцию кириллицей (как оно реально произносится, обычными русскими буквами, без спецсимволов). Слова: ${JSON.stringify(
+      const prompt = `Переведи список ${LANGUAGE.genitive} слов на ${NATIVE.adjM} язык, и для каждого слова дай приближённую фонетическую транскрипцию ${NATIVE.transcriptionInstruction}. Слова: ${JSON.stringify(
         toAdd
       )}. Ответь СТРОГО в виде JSON-объекта вида {"слово":{"ru":"перевод","transcription":"транскрипция"}} без markdown-разметки, без пояснений, только сам JSON.`;
       const raw = await callClaude(prompt);
@@ -367,20 +338,13 @@ export default function VocabTrainer() {
         added: Date.now(),
         correct: 0,
         wrong: 0,
-        forms: [],
         transcription: map[w]?.transcription || "",
       }));
       setWords((prev) => [...newWords, ...prev]);
       await Promise.all(newWords.map((w) => apiAddWord(w)));
       setExtracted([]);
       setPastedText("");
-      const verbCount = newWords.filter((w) => isVerb(w.tr)).length;
-      setTextMsg(
-        verbCount > 0
-          ? `Added ${newWords.length} words (verbs: ${verbCount}, fetching forms...)`
-          : `Added ${newWords.length} words`
-      );
-      newWords.filter((w) => isVerb(w.tr)).forEach((w) => attachVerbForms(w.id, w.tr));
+      setTextMsg(`Added ${newWords.length} words`);
     } catch (e) {
       setTextMsg("Couldn't translate automatically, try again.");
     }
@@ -449,43 +413,33 @@ export default function VocabTrainer() {
     return pool[pool.length - 1];
   }
 
-  function pickNext(list: Word[], dir?: "tr-ru" | "ru-tr") {
-    const useDirection = dir || direction;
+  function pickNext(list: Word[]) {
     if (list.length === 0) {
       setCurrent(null);
-      setQuizForm(null);
       return;
     }
     const pool = list.length > 1 && current ? list.filter((w) => w.id !== current.id) : list;
     const pick = pickWeighted(pool);
     setCurrent(pick);
-    if (quizFilter === "verbs" && pick.forms && pick.forms.length > 0 && Math.random() < 0.6) {
-      setQuizForm(pick.forms[Math.floor(Math.random() * pick.forms.length)]);
-    } else {
-      setQuizForm(null);
-    }
     setAnswer("");
     setFeedback(null);
     setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
   }
 
-  const quizWords = quizFilter === "verbs" ? words.filter((w) => isVerb(w.tr)) : words;
-
   useEffect(() => {
-    if (tab === "quiz" && loaded && quizWords.length > 0 && (!current || !quizWords.some((w) => w.id === current.id))) {
-      pickNext(quizWords);
+    if (tab === "quiz" && loaded && words.length > 0 && (!current || !words.some((w) => w.id === current.id))) {
+      pickNext(words);
     }
-    if (tab === "quiz" && quizWords.length === 0) {
+    if (tab === "quiz" && words.length === 0) {
       setCurrent(null);
-      setQuizForm(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, loaded, quizWords.length, quizFilter]);
+  }, [tab, loaded, words.length]);
 
   // Streak: while actively on the quiz tab (and the page is visible), count
   // active seconds toward today's goal and persist them every 5s.
   useEffect(() => {
-    if (tab !== "quiz" || quizWords.length === 0) return;
+    if (tab !== "quiz" || words.length === 0) return;
     const tick = () => {
       if (document.visibilityState !== "visible") return;
       const key = localDayKey();
@@ -494,12 +448,11 @@ export default function VocabTrainer() {
     };
     const id = setInterval(tick, 5000);
     return () => clearInterval(id);
-  }, [tab, quizWords.length]);
+  }, [tab, words.length]);
 
   async function checkAnswer() {
     if (!current) return;
-    const promptAnswer =
-      direction === "tr-ru" ? quizForm?.ru || current.ru : quizForm?.form || current.tr;
+    const promptAnswer = direction === "tr-ru" ? current.ru : current.tr;
     const variants = promptAnswer
       .split(/[,;/]/)
       .map((s) => s.trim().toLowerCase())
@@ -517,7 +470,7 @@ export default function VocabTrainer() {
   function handleQuizKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
       if (feedback) {
-        pickNext(quizWords);
+        pickNext(words);
       } else {
         checkAnswer();
       }
@@ -527,12 +480,6 @@ export default function VocabTrainer() {
   async function deleteWord(id: string) {
     setWords((prev) => prev.filter((w) => w.id !== id));
     await apiDeleteWord(id);
-  }
-
-  async function regenerateForms(word: Word) {
-    setRegeneratingId(word.id);
-    await attachVerbForms(word.id, word.tr);
-    setRegeneratingId(null);
   }
 
   const sortedList = [...words].sort((a, b) => a.tr.localeCompare(b.tr, "tr"));
@@ -754,17 +701,6 @@ export default function VocabTrainer() {
           text-transform: uppercase;
           letter-spacing: 0.08em;
         }
-        .vt-flash-formlabel {
-          display: inline-block;
-          margin-top: 4px;
-          padding: 3px 10px;
-          border-radius: 999px;
-          background: rgba(46,156,107,0.16);
-          color: var(--turquoise);
-          font-size: 11.5px;
-          font-weight: 600;
-        }
-
         .vt-quiz-input-row { display: flex; gap: 8px; margin-top: 18px; }
         .vt-quiz-input-row .vt-input { text-align: center; font-size: 17px; }
         .vt-quiz-input-row .vt-btn { flex-shrink: 0; padding: 11px 15px; }
@@ -861,30 +797,6 @@ export default function VocabTrainer() {
         .vt-streak-circle.today { box-shadow: 0 0 0 2px var(--tile-blue-deep); }
         .vt-streak-circle.future { background: transparent; border: 1.5px dashed var(--sand-line); }
 
-        .vt-quiz-filter {
-          display: flex;
-          justify-content: center;
-          gap: 6px;
-          margin-bottom: 14px;
-        }
-        .vt-filter-btn {
-          font-family: 'Inter', sans-serif;
-          font-weight: 600;
-          font-size: 12.5px;
-          padding: 6px 14px;
-          border-radius: 999px;
-          border: 1.5px solid var(--sand-line);
-          background: #FFFFFF;
-          color: var(--ink-soft);
-          cursor: pointer;
-          transition: all 0.12s ease;
-        }
-        .vt-filter-btn.active {
-          background: var(--tile-blue);
-          color: #FFFFFF;
-          border-color: var(--tile-blue);
-        }
-
         .vt-direction-toggle {
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -913,17 +825,6 @@ export default function VocabTrainer() {
         .vt-list-word { font-weight: 600; font-size: 14.5px; }
         .vt-list-transcription { font-weight: 400; color: var(--ink-soft); font-style: italic; }
         .vt-list-tr { font-size: 13px; color: var(--ink-soft); }
-        .vt-verb-badge {
-          display: inline-block;
-          margin-left: 8px;
-          padding: 1px 8px;
-          border-radius: 999px;
-          background: rgba(46,156,107,0.12);
-          color: var(--tile-blue-deep);
-          font-family: 'JetBrains Mono', monospace;
-          font-size: 10.5px;
-          font-weight: 600;
-        }
         .vt-list-score {
           font-family: 'JetBrains Mono', monospace;
           font-size: 11.5px;
@@ -986,7 +887,7 @@ export default function VocabTrainer() {
       {tab === "add" && (
         <div className="vt-card">
           <div className="vt-direction-toggle" style={{ marginBottom: 16 }}>
-            <span className="on">{addDirection === "tr-ru" ? LANGUAGE.name : "Russian"}</span>
+            <span className="on">{addDirection === "tr-ru" ? LANGUAGE.name : NATIVE.name}</span>
             <button
               className="vt-btn vt-btn-ghost"
               style={{ padding: "7px" }}
@@ -1000,17 +901,17 @@ export default function VocabTrainer() {
             >
               <ArrowLeftRight size={15} />
             </button>
-            <span>{addDirection === "tr-ru" ? "Russian" : LANGUAGE.name}</span>
+            <span>{addDirection === "tr-ru" ? NATIVE.name : LANGUAGE.name}</span>
           </div>
 
           <div className="vt-row">
             <div>
-              <span className="vt-field-label">{addDirection === "tr-ru" ? `${LANGUAGE.name} word` : "Russian word"}</span>
+              <span className="vt-field-label">{addDirection === "tr-ru" ? `${LANGUAGE.name} word` : `${NATIVE.name} word`}</span>
               <input
                 className="vt-input"
                 value={newTr}
                 onChange={(e) => setNewTr(e.target.value)}
-                placeholder={addDirection === "tr-ru" ? `e.g. ${LANGUAGE.wordExample}` : `e.g. ${LANGUAGE.wordExampleRu}`}
+                placeholder={addDirection === "tr-ru" ? `e.g. ${LANGUAGE.wordExample}` : `e.g. ${NATIVE.glossExample}`}
               />
             </div>
             <button className="vt-btn vt-btn-ghost vt-btn-block" onClick={handleLookup} disabled={lookupLoading || !newTr.trim()}>
@@ -1020,12 +921,12 @@ export default function VocabTrainer() {
           </div>
           <div className="vt-row">
             <div>
-              <span className="vt-field-label">{addDirection === "tr-ru" ? "Russian translation" : `${LANGUAGE.name} translation`}</span>
+              <span className="vt-field-label">{addDirection === "tr-ru" ? `${NATIVE.name} translation` : `${LANGUAGE.name} translation`}</span>
               <input
                 className="vt-input"
                 value={newRu}
                 onChange={(e) => setNewRu(e.target.value)}
-                placeholder={addDirection === "tr-ru" ? `e.g. ${LANGUAGE.wordExampleRu}` : `e.g. ${LANGUAGE.wordExample}`}
+                placeholder={addDirection === "tr-ru" ? `e.g. ${NATIVE.glossExample}` : `e.g. ${LANGUAGE.wordExample}`}
               />
             </div>
           </div>
@@ -1036,7 +937,7 @@ export default function VocabTrainer() {
                 className="vt-input"
                 value={newTranscription}
                 onChange={(e) => setNewTranscription(e.target.value)}
-                placeholder="напр. бокУ"
+                placeholder={NATIVE.code === "ru" ? "напр. бокУ" : "e.g. boo-koo"}
               />
             </div>
           </div>
@@ -1149,67 +1050,33 @@ export default function VocabTrainer() {
             </div>
           </div>
 
-          <div className="vt-quiz-filter">
-            <button
-              className={`vt-filter-btn ${quizFilter === "all" ? "active" : ""}`}
-              onClick={() => {
-                setQuizFilter("all");
-                setCurrent(null);
-                setQuizForm(null);
-              }}
-            >
-              All
-            </button>
-            <button
-              className={`vt-filter-btn ${quizFilter === "verbs" ? "active" : ""}`}
-              onClick={() => {
-                setQuizFilter("verbs");
-                setCurrent(null);
-                setQuizForm(null);
-              }}
-            >
-              Verbs
-            </button>
-          </div>
-
           <div className="vt-direction-toggle">
-            <span className="on">{direction === "tr-ru" ? LANGUAGE.name : "Russian"}</span>
+            <span className="on">{direction === "tr-ru" ? LANGUAGE.name : NATIVE.name}</span>
             <button
               className="vt-btn vt-btn-ghost"
               style={{ padding: "7px" }}
               onClick={() => {
                 const next = direction === "tr-ru" ? "ru-tr" : "tr-ru";
                 setDirection(next);
-                pickNext(quizWords, next);
+                pickNext(words);
               }}
             >
               <ArrowLeftRight size={15} />
             </button>
-            <span>{direction === "tr-ru" ? "Russian" : LANGUAGE.name}</span>
+            <span>{direction === "tr-ru" ? NATIVE.name : LANGUAGE.name}</span>
           </div>
 
-          {quizWords.length === 0 && (
-            <div className="vt-empty">
-              {quizFilter === "verbs" ? `No verbs yet. Add a ${LANGUAGE.name} verb.` : "No words yet. Add some in the Add or Text tab."}
-            </div>
+          {words.length === 0 && (
+            <div className="vt-empty">No words yet. Add some in the Add or Text tab.</div>
           )}
 
-          {quizWords.length > 0 && current && (
+          {words.length > 0 && current && (
             <div className="vt-card vt-flashcard">
-              <div className="vt-flash-hint">{direction === "tr-ru" ? "translate to Russian" : `translate to ${LANGUAGE.name}`}</div>
-              <div className="vt-flash-word">
-                {direction === "tr-ru"
-                  ? quizForm
-                    ? quizForm.form
-                    : current.tr
-                  : quizForm
-                  ? quizForm.ru
-                  : current.ru}
-              </div>
-              {!quizForm && direction === "tr-ru" && current.transcription && (
+              <div className="vt-flash-hint">{direction === "tr-ru" ? `translate to ${NATIVE.name}` : `translate to ${LANGUAGE.name}`}</div>
+              <div className="vt-flash-word">{direction === "tr-ru" ? current.tr : current.ru}</div>
+              {direction === "tr-ru" && current.transcription && (
                 <div className="vt-flash-hint" style={{ marginTop: 4 }}>[{current.transcription}]</div>
               )}
-              {quizForm && <div className="vt-flash-formlabel">{quizForm.label}</div>}
 
               <div className="vt-quiz-input-row">
                 <input
@@ -1226,7 +1093,7 @@ export default function VocabTrainer() {
                     <Check size={15} />
                   </button>
                 ) : (
-                  <button className="vt-btn vt-btn-primary" onClick={() => pickNext(quizWords)}>
+                  <button className="vt-btn vt-btn-primary" onClick={() => pickNext(words)}>
                     <Shuffle size={15} />
                   </button>
                 )}
@@ -1241,7 +1108,7 @@ export default function VocabTrainer() {
             </div>
           )}
 
-          {quizWords.length > 0 && (
+          {words.length > 0 && (
             <div className="vt-stats-bar">
               <span>Correct: <b>{sessionStats.correct}</b></span>
               <span>Wrong: <b>{sessionStats.wrong}</b></span>
@@ -1272,27 +1139,10 @@ export default function VocabTrainer() {
                   {w.tr}
                   {w.transcription && <span className="vt-list-transcription"> [{w.transcription}]</span>}
                 </div>
-                <div className="vt-list-tr">
-                  {w.ru}
-                  {w.forms && w.forms.length > 0 && (
-                    <span className="vt-verb-badge" title={w.forms.map((f) => f.form).join(", ")}>
-                      verb · {w.forms.length} forms
-                    </span>
-                  )}
-                </div>
+                <div className="vt-list-tr">{w.ru}</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
                 <span className="vt-list-score">✓{w.correct} ✗{w.wrong}</span>
-                {isVerb(w.tr) && (
-                  <button
-                    className="vt-del-btn"
-                    onClick={() => regenerateForms(w)}
-                    disabled={regeneratingId === w.id}
-                    title="Regenerate verb forms"
-                  >
-                    <RefreshCw size={16} className={regeneratingId === w.id ? "vt-spin" : ""} />
-                  </button>
-                )}
                 <button className="vt-del-btn" onClick={() => deleteWord(w.id)}>
                   <Trash2 size={16} />
                 </button>
