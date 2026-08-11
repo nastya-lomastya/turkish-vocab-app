@@ -4,7 +4,7 @@ import { sql, ensureStreakTable } from "@/lib/db";
 export async function GET() {
   await ensureStreakTable();
   const rows = await sql`
-    SELECT day, seconds FROM streak_days ORDER BY day DESC LIMIT 35
+    SELECT day, seconds FROM streak_days ORDER BY day DESC LIMIT 400
   `;
   return NextResponse.json({ days: rows });
 }

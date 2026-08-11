@@ -541,25 +541,32 @@ export default function VocabTrainer() {
     ? sortedList.filter((w) => w.tr.toLowerCase().includes(searchQuery) || w.ru.toLowerCase().includes(searchQuery))
     : sortedList;
 
-  // Streak: last 30 days for the grid, plus the current run of consecutive
-  // completed days (today only counts once it hits the goal itself).
+  // Streak: current run of consecutive completed days (today is exempt from
+  // breaking the streak until the day is over — it just doesn't count yet).
   const todayKey = localDayKey();
-  const last30 = Array.from({ length: 30 }, (_, i) => {
-    const d = new Date();
-    d.setDate(d.getDate() - (29 - i));
-    const key = localDayKey(d);
-    return { key, seconds: streakDays[key] || 0, isToday: key === todayKey };
-  });
   let streakCount = 0;
-  for (let i = last30.length - 1; i >= 0; i--) {
-    const day = last30[i];
-    if (day.seconds >= STREAK_GOAL_SECONDS) {
+  for (let i = 0; i < 400; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const seconds = streakDays[localDayKey(d)] || 0;
+    if (seconds >= STREAK_GOAL_SECONDS) {
       streakCount++;
-    } else if (!day.isToday) {
+    } else if (i !== 0) {
       break;
     }
   }
   const todaySeconds = streakDays[todayKey] || 0;
+
+  // This calendar week (Sun-Sat), for the Duolingo-style week strip.
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(weekStart);
+    d.setDate(weekStart.getDate() + i);
+    const key = localDayKey(d);
+    return { key, seconds: streakDays[key] || 0, isToday: key === todayKey, isFuture: key > todayKey };
+  });
+  const weekdayLabels = ["S", "M", "T", "W", "T", "F", "S"];
 
   return (
     <div className="vt-root">
@@ -823,19 +830,36 @@ export default function VocabTrainer() {
           font-family: 'JetBrains Mono', monospace;
           font-size: 11.5px;
         }
-        .vt-streak-grid {
+        .vt-streak-week {
           display: flex;
-          flex-wrap: wrap;
+          justify-content: space-between;
           gap: 4px;
         }
-        .vt-streak-day {
-          width: 12px;
-          height: 12px;
-          border-radius: 3px;
-          background: var(--sand-line);
+        .vt-streak-weekday {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
         }
-        .vt-streak-day.done { background: var(--tile-blue); }
-        .vt-streak-day.today { box-shadow: 0 0 0 1.5px var(--tile-blue-deep); }
+        .vt-streak-weekday-label {
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--ink-soft);
+        }
+        .vt-streak-weekday-label.today { color: var(--tile-blue-deep); }
+        .vt-streak-circle {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background: var(--sand-line);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #FFFFFF;
+        }
+        .vt-streak-circle.done { background: var(--tile-blue); }
+        .vt-streak-circle.today { box-shadow: 0 0 0 2px var(--tile-blue-deep); }
+        .vt-streak-circle.future { background: transparent; border: 1.5px dashed var(--sand-line); }
 
         .vt-quiz-filter {
           display: flex;
@@ -1107,14 +1131,21 @@ export default function VocabTrainer() {
                   : `${Math.floor(todaySeconds / 60)}:${String(todaySeconds % 60).padStart(2, "0")} / 10:00 today`}
               </span>
             </div>
-            <div className="vt-streak-grid">
-              {last30.map((d) => (
-                <span
-                  key={d.key}
-                  className={`vt-streak-day ${d.seconds >= STREAK_GOAL_SECONDS ? "done" : ""} ${d.isToday ? "today" : ""}`}
-                  title={d.key}
-                />
-              ))}
+            <div className="vt-streak-week">
+              {weekDays.map((d, i) => {
+                const done = d.seconds >= STREAK_GOAL_SECONDS;
+                return (
+                  <div className="vt-streak-weekday" key={d.key}>
+                    <span className={`vt-streak-weekday-label ${d.isToday ? "today" : ""}`}>{weekdayLabels[i]}</span>
+                    <span
+                      className={`vt-streak-circle ${done ? "done" : ""} ${d.isToday && !done ? "today" : ""} ${d.isFuture ? "future" : ""}`}
+                      title={d.key}
+                    >
+                      {done && <Check size={13} strokeWidth={3} />}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
