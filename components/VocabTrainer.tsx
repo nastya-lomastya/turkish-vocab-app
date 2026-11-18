@@ -16,6 +16,11 @@ import {
   Loader2,
   Image as ImageIcon,
   XCircle,
+  ChevronLeft,
+  ChevronRight,
+  Unlink,
+  Link2,
+  MessageSquareQuote,
 } from "lucide-react";
 import { LANGUAGE, NATIVE } from "@/lib/language";
 
@@ -27,7 +32,29 @@ type Word = {
   correct: number;
   wrong: number;
   transcription: string;
+  parent_id: string | null; // set => this entry is an example/expression of another word
 };
+
+// Rough Turkish stem for spotting a word inside phrases: drops the -mak/-mek
+// infinitive ending and also tries the softened final consonant
+// (kitap → kitabı, gitmek → gidiyor).
+function stemsOf(word: string): string[] {
+  const base = word.toLocaleLowerCase("tr").trim().replace(/(mak|mek)$/, "");
+  if (base.length < 3) return [];
+  const stems = [base];
+  const soft: Record<string, string> = { k: "ğ", p: "b", t: "d", ç: "c" };
+  const last = base[base.length - 1];
+  if (base.length >= 4 && soft[last]) stems.push(base.slice(0, -1) + soft[last]);
+  return stems;
+}
+
+function phraseHasWord(phrase: string, word: string): boolean {
+  if (/\s/.test(word.trim())) return false;
+  const stems = stemsOf(word);
+  if (stems.length === 0) return false;
+  const tokens = phrase.toLocaleLowerCase("tr").split(/[^\p{L}]+/u).filter(Boolean);
+  return tokens.some((t) => stems.some((st) => t.startsWith(st)));
+}
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -78,6 +105,7 @@ async function apiListWords(): Promise<Word[]> {
     ...w,
     added: Number(w.added),
     transcription: w.transcription || "",
+    parent_id: w.parent_id ?? null,
   }));
 }
 
@@ -90,7 +118,10 @@ async function apiAddWord(word: Word) {
   if (res.status === 401) redirectToLogin();
 }
 
-async function apiUpdateWord(id: string, patch: Partial<Pick<Word, "correct" | "wrong" | "transcription">>) {
+async function apiUpdateWord(
+  id: string,
+  patch: Partial<Pick<Word, "correct" | "wrong" | "transcription" | "parent_id">>
+) {
   const res = await fetch(`/api/words/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
@@ -191,7 +222,24 @@ export default function VocabTrainer() {
   const [answer, setAnswer] = useState("");
   const [feedback, setFeedback] = useState<{ correct: boolean; correctAnswer: string } | null>(null);
   const [sessionStats, setSessionStats] = useState({ correct: 0, wrong: 0 });
+  const [showExamples, setShowExamples] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Word detail (examples) state
+  const [openWordId, setOpenWordId] = useState<string | null>(null);
+  const [exTr, setExTr] = useState("");
+  const [exRu, setExRu] = useState("");
+  const [exLoading, setExLoading] = useState(false);
+  const [exMsg, setExMsg] = useState("");
+
+  // "Attach to word" picker in the Words list
+  const [linkingId, setLinkingId] = useState<string | null>(null);
+  const [linkSearch, setLinkSearch] = useState("");
+
+  // Main list = top-level words; examples live inside their parent word.
+  const topLevel = words.filter((w) => !w.parent_id);
+  const quizWords = topLevel;
+  const exampleCount = words.length - topLevel.length;
 
   // Streak state
   const [streakDays, setStreakDays] = useState<Record<string, number>>({});
@@ -282,6 +330,7 @@ export default function VocabTrainer() {
       correct: 0,
       wrong: 0,
       transcription: newTranscription.trim(),
+      parent_id: null,
     };
     setWords((prev) => [word, ...prev]);
     await apiAddWord(word);
@@ -339,6 +388,7 @@ export default function VocabTrainer() {
         correct: 0,
         wrong: 0,
         transcription: map[w]?.transcription || "",
+        parent_id: null,
       }));
       setWords((prev) => [...newWords, ...prev]);
       await Promise.all(newWords.map((w) => apiAddWord(w)));
@@ -413,7 +463,7 @@ export default function VocabTrainer() {
     return pool[pool.length - 1];
   }
 
-  function pickNext(list: Word[]) {
+  function pickNext(list: Word[] = quizWords) {
     if (list.length === 0) {
       setCurrent(null);
       return;
@@ -423,23 +473,24 @@ export default function VocabTrainer() {
     setCurrent(pick);
     setAnswer("");
     setFeedback(null);
+    setShowExamples(false);
     setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
   }
 
   useEffect(() => {
-    if (tab === "quiz" && loaded && words.length > 0 && (!current || !words.some((w) => w.id === current.id))) {
-      pickNext(words);
+    if (tab === "quiz" && loaded && quizWords.length > 0 && (!current || !quizWords.some((w) => w.id === current.id))) {
+      pickNext(quizWords);
     }
-    if (tab === "quiz" && words.length === 0) {
+    if (tab === "quiz" && quizWords.length === 0) {
       setCurrent(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, loaded, words.length]);
+  }, [tab, loaded, quizWords.length]);
 
   // Streak: while actively on the quiz tab (and the page is visible), count
   // active seconds toward today's goal and persist them every 5s.
   useEffect(() => {
-    if (tab !== "quiz" || words.length === 0) return;
+    if (tab !== "quiz" || quizWords.length === 0) return;
     const tick = () => {
       if (document.visibilityState !== "visible") return;
       const key = localDayKey();
@@ -448,7 +499,7 @@ export default function VocabTrainer() {
     };
     const id = setInterval(tick, 5000);
     return () => clearInterval(id);
-  }, [tab, words.length]);
+  }, [tab, quizWords.length]);
 
   async function checkAnswer() {
     if (!current) return;
@@ -470,7 +521,7 @@ export default function VocabTrainer() {
   function handleQuizKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter") {
       if (feedback) {
-        pickNext(words);
+        pickNext();
       } else {
         checkAnswer();
       }
@@ -478,15 +529,108 @@ export default function VocabTrainer() {
   }
 
   async function deleteWord(id: string) {
-    setWords((prev) => prev.filter((w) => w.id !== id));
+    const n = examplesOf(id).length;
+    if (n > 0 && !window.confirm(`Delete this word and its ${n} example${n === 1 ? "" : "s"}?`)) return;
+    setWords((prev) => prev.filter((w) => w.id !== id && w.parent_id !== id));
+    if (openWordId === id) setOpenWordId(null);
     await apiDeleteWord(id);
   }
 
-  const sortedList = [...words].sort((a, b) => a.tr.localeCompare(b.tr, "tr"));
-  const searchQuery = wordSearch.trim().toLowerCase();
+  // ---- examples ----
+  function examplesOf(id: string): Word[] {
+    return words.filter((w) => w.parent_id === id).sort((a, b) => a.added - b.added);
+  }
+
+  function openWord(id: string) {
+    setOpenWordId(id);
+    setExTr("");
+    setExRu("");
+    setExMsg("");
+    window.scrollTo({ top: 0 });
+  }
+
+  async function setParent(id: string, parentId: string | null) {
+    setWords((prev) => prev.map((w) => (w.id === id ? { ...w, parent_id: parentId } : w)));
+    await apiUpdateWord(id, { parent_id: parentId });
+  }
+
+  async function handleAddExample() {
+    if (!openWordId || !exTr.trim()) return;
+    const tr = exTr.trim();
+    if (words.some((w) => w.tr.toLowerCase() === tr.toLowerCase())) {
+      setExMsg("This phrase is already in your list — see the suggestions below to move it here.");
+      return;
+    }
+    setExLoading(true);
+    let ru = exRu.trim();
+    try {
+      if (!ru) {
+        const raw = await callClaude(
+          `Фраза на ${LANGUAGE.adjN} языке: "${tr}". Дай её перевод на ${NATIVE.adjM} язык (естественно, кратко). Ответь СТРОГО в виде JSON-объекта {"translation":"..."}, без markdown-разметки и пояснений.`
+        );
+        ru = JSON.parse(stripFence(raw)).translation || "";
+      }
+    } catch (e) {
+      // fall through to the empty-translation check
+    }
+    if (!ru) {
+      setExMsg("Couldn't translate automatically, enter the translation manually.");
+      setExLoading(false);
+      return;
+    }
+    const ex: Word = {
+      id: uid(),
+      tr,
+      ru,
+      added: Date.now(),
+      correct: 0,
+      wrong: 0,
+      transcription: "",
+      parent_id: openWordId,
+    };
+    setWords((prev) => [ex, ...prev]);
+    await apiAddWord(ex);
+    setExTr("");
+    setExRu("");
+    setExMsg("");
+    setExLoading(false);
+  }
+
+  const sortedList = [...topLevel].sort((a, b) => a.tr.localeCompare(b.tr, "tr"));
+  const searchQuery = wordSearch.trim().toLocaleLowerCase("tr");
+  const matches = (w: Word) =>
+    w.tr.toLocaleLowerCase("tr").includes(searchQuery) || w.ru.toLowerCase().includes(searchQuery);
   const filteredList = searchQuery
-    ? sortedList.filter((w) => w.tr.toLowerCase().includes(searchQuery) || w.ru.toLowerCase().includes(searchQuery))
+    ? sortedList.filter((w) => matches(w) || words.some((e) => e.parent_id === w.id && matches(e)))
     : sortedList;
+
+  const openWordObj = openWordId ? words.find((w) => w.id === openWordId) || null : null;
+  const openExamples = openWordObj ? examplesOf(openWordObj.id) : [];
+  const suggestions = openWordObj
+    ? topLevel.filter((w) => w.id !== openWordObj.id && /\s/.test(w.tr.trim()) && phraseHasWord(w.tr, openWordObj.tr))
+    : [];
+  // Candidates for the "attach to word" picker: words that look like they
+  // appear in the phrase come first, then whatever matches the search.
+  const linkingObj = linkingId ? words.find((w) => w.id === linkingId) || null : null;
+  const linkQuery = linkSearch.trim().toLocaleLowerCase("tr");
+  const linkCandidates = linkingObj
+    ? (() => {
+        const pool = sortedList.filter((w) => w.id !== linkingObj.id);
+        const guessed = pool.filter((w) => phraseHasWord(linkingObj.tr, w.tr));
+        if (!linkQuery) return guessed;
+        const searched = pool.filter(
+          (w) => w.tr.toLocaleLowerCase("tr").includes(linkQuery) || w.ru.toLowerCase().includes(linkQuery)
+        );
+        return [...guessed.filter((w) => searched.includes(w)), ...searched.filter((w) => !guessed.includes(w))].slice(0, 30);
+      })()
+    : [];
+
+  function toggleLinking(id: string) {
+    setLinkingId((cur) => (cur === id ? null : id));
+    setLinkSearch("");
+  }
+
+  const currentExamples = current ? examplesOf(current.id) : [];
 
   // Streak: current run of consecutive completed days (today is exempt from
   // breaking the streak until the day is over — it just doesn't count yet).
@@ -855,6 +999,84 @@ export default function VocabTrainer() {
           background: var(--sand-line);
           margin: 18px 0 14px;
         }
+        .vt-list-item.clickable { cursor: pointer; }
+        .vt-list-item.clickable:hover { background: rgba(46,156,107,0.05); }
+        .vt-ex-badge {
+          display: inline-flex;
+          align-items: center;
+          margin-left: 6px;
+          padding: 1px 7px;
+          border-radius: 999px;
+          background: var(--tab-active);
+          color: var(--tile-blue-deep);
+          font-size: 11px;
+          font-weight: 600;
+          vertical-align: middle;
+        }
+        .vt-back-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          background: none;
+          border: none;
+          color: var(--tile-blue-deep);
+          font-family: 'Inter', sans-serif;
+          font-weight: 600;
+          font-size: 13.5px;
+          cursor: pointer;
+          padding: 4px 0;
+          margin-bottom: 12px;
+        }
+        .vt-detail-word {
+          font-family: 'Fraunces', serif;
+          font-weight: 600;
+          font-size: 28px;
+          line-height: 1.15;
+          overflow-wrap: break-word;
+        }
+        .vt-section-title {
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 11.5px;
+          color: var(--ink-soft);
+          text-transform: uppercase;
+          letter-spacing: 0.08em;
+          margin: 20px 0 8px;
+        }
+        .vt-icon-btn {
+          background: none;
+          border: none;
+          color: var(--ink-soft);
+          cursor: pointer;
+          padding: 4px;
+        }
+        .vt-icon-btn:hover { color: var(--ink); }
+        .vt-examples-panel {
+          margin-top: 14px;
+          text-align: left;
+          background: #FFFFFF;
+          border-radius: 8px;
+          border: 1.5px solid var(--sand-line);
+        }
+        .vt-examples-panel .vt-list-item { padding: 10px 12px; }
+        .vt-link-panel {
+          padding: 10px 12px 12px;
+          background: #FFFFFF;
+          border-bottom: 1px solid var(--sand-line);
+        }
+        .vt-link-option {
+          display: block;
+          width: 100%;
+          text-align: left;
+          background: none;
+          border: none;
+          border-bottom: 1px solid var(--sand-line);
+          padding: 9px 4px;
+          cursor: pointer;
+          font-family: 'Inter', sans-serif;
+          color: var(--ink);
+        }
+        .vt-link-option:last-child { border-bottom: none; }
+        .vt-link-option:hover { background: rgba(46,156,107,0.06); }
         .vt-image-preview {
           height: 56px;
           width: 56px;
@@ -866,7 +1088,9 @@ export default function VocabTrainer() {
 
       <div className="vt-header">
         <span className="vt-title">{LANGUAGE.appTitle}</span>
-        <span className="vt-count">{words.length} words</span>
+        <span className="vt-count">
+          {topLevel.length} words{exampleCount > 0 ? ` · ${exampleCount} examples` : ""}
+        </span>
       </div>
 
       <div className="vt-tabs">
@@ -879,7 +1103,10 @@ export default function VocabTrainer() {
         <button className={`vt-tab ${tab === "quiz" ? "active" : ""}`} onClick={() => setTab("quiz")}>
           <Brain size={15} /> Quiz
         </button>
-        <button className={`vt-tab ${tab === "list" ? "active" : ""}`} onClick={() => setTab("list")}>
+        <button className={`vt-tab ${tab === "list" ? "active" : ""}`} onClick={() => {
+            setTab("list");
+            setOpenWordId(null);
+          }}>
           <ListIcon size={15} /> Words
         </button>
       </div>
@@ -1058,7 +1285,7 @@ export default function VocabTrainer() {
               onClick={() => {
                 const next = direction === "tr-ru" ? "ru-tr" : "tr-ru";
                 setDirection(next);
-                pickNext(words);
+                pickNext();
               }}
             >
               <ArrowLeftRight size={15} />
@@ -1066,11 +1293,11 @@ export default function VocabTrainer() {
             <span>{direction === "tr-ru" ? NATIVE.name : LANGUAGE.name}</span>
           </div>
 
-          {words.length === 0 && (
+          {quizWords.length === 0 && (
             <div className="vt-empty">No words yet. Add some in the Add or Text tab.</div>
           )}
 
-          {words.length > 0 && current && (
+          {quizWords.length > 0 && current && (
             <div className="vt-card vt-flashcard">
               <div className="vt-flash-hint">{direction === "tr-ru" ? `translate to ${NATIVE.name}` : `translate to ${LANGUAGE.name}`}</div>
               <div className="vt-flash-word">{direction === "tr-ru" ? current.tr : current.ru}</div>
@@ -1093,7 +1320,7 @@ export default function VocabTrainer() {
                     <Check size={15} />
                   </button>
                 ) : (
-                  <button className="vt-btn vt-btn-primary" onClick={() => pickNext(words)}>
+                  <button className="vt-btn vt-btn-primary" onClick={() => pickNext()}>
                     <Shuffle size={15} />
                   </button>
                 )}
@@ -1105,10 +1332,37 @@ export default function VocabTrainer() {
                   {feedback.correct ? "Correct!" : `Correct answer: ${feedback.correctAnswer}`}
                 </div>
               )}
+
+              {feedback && (
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    className="vt-btn vt-btn-ghost vt-btn-block"
+                    onClick={() => setShowExamples((v) => !v)}
+                    disabled={currentExamples.length === 0}
+                  >
+                    <MessageSquareQuote size={15} />
+                    {currentExamples.length === 0
+                      ? "No examples yet"
+                      : `${showExamples ? "Hide" : "Examples"} (${currentExamples.length})`}
+                  </button>
+                  {showExamples && currentExamples.length > 0 && (
+                    <div className="vt-examples-panel">
+                      {currentExamples.map((ex) => (
+                        <div className="vt-list-item" key={ex.id}>
+                          <div style={{ minWidth: 0 }}>
+                            <div className="vt-list-word">{ex.tr}</div>
+                            <div className="vt-list-tr">{ex.ru}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {words.length > 0 && (
+          {quizWords.length > 0 && (
             <div className="vt-stats-bar">
               <span>Correct: <b>{sessionStats.correct}</b></span>
               <span>Wrong: <b>{sessionStats.wrong}</b></span>
@@ -1117,7 +1371,7 @@ export default function VocabTrainer() {
         </div>
       )}
 
-      {tab === "list" && (
+      {tab === "list" && !openWordObj && (
         <div>
           <div className="vt-search-row">
             <Search size={15} className="vt-search-icon" />
@@ -1125,31 +1379,191 @@ export default function VocabTrainer() {
               className="vt-input vt-search-input"
               value={wordSearch}
               onChange={(e) => setWordSearch(e.target.value)}
-              placeholder="Search words..."
+              placeholder="Search words and examples..."
             />
           </div>
           <div className="vt-card" style={{ padding: "4px" }}>
             {filteredList.length === 0 && (
               <div className="vt-empty">{searchQuery ? "No words match your search." : "Your list is empty."}</div>
             )}
-            {filteredList.map((w) => (
-            <div className="vt-list-item" key={w.id}>
-              <div style={{ minWidth: 0 }}>
-                <div className="vt-list-word">
-                  {w.tr}
-                  {w.transcription && <span className="vt-list-transcription"> [{w.transcription}]</span>}
+            {filteredList.map((w) => {
+              const exCount = words.filter((e) => e.parent_id === w.id).length;
+              return (
+                <div key={w.id}>
+                <div className="vt-list-item clickable" onClick={() => openWord(w.id)}>
+                  <div style={{ minWidth: 0 }}>
+                    <div className="vt-list-word">
+                      {w.tr}
+                      {w.transcription && <span className="vt-list-transcription"> [{w.transcription}]</span>}
+                      {exCount > 0 && <span className="vt-ex-badge">{exCount}</span>}
+                    </div>
+                    <div className="vt-list-tr">{w.ru}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                    <span className="vt-list-score">✓{w.correct} ✗{w.wrong}</span>
+                    {exCount === 0 && (
+                      <button
+                        className="vt-icon-btn"
+                        title="Attach to a word as an example"
+                        style={linkingId === w.id ? { color: "var(--tile-blue-deep)" } : undefined}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleLinking(w.id);
+                        }}
+                      >
+                        <Link2 size={16} />
+                      </button>
+                    )}
+                    <button
+                      className="vt-del-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteWord(w.id);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                    <ChevronRight size={16} color="var(--ink-soft)" />
+                  </div>
                 </div>
-                <div className="vt-list-tr">{w.ru}</div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
-                <span className="vt-list-score">✓{w.correct} ✗{w.wrong}</span>
-                <button className="vt-del-btn" onClick={() => deleteWord(w.id)}>
-                  <Trash2 size={16} />
-                </button>
-              </div>
+                {linkingId === w.id && (
+                  <div className="vt-link-panel">
+                    <span className="vt-field-label">Attach “{w.tr}” as an example of:</span>
+                    <input
+                      className="vt-input"
+                      autoFocus
+                      value={linkSearch}
+                      onChange={(e) => setLinkSearch(e.target.value)}
+                      placeholder="Search for the word..."
+                    />
+                    <div style={{ marginTop: 6 }}>
+                      {linkCandidates.length === 0 && (
+                        <div className="vt-list-tr" style={{ padding: "8px 4px" }}>
+                          {linkQuery ? "No words found." : "Type to find the word."}
+                        </div>
+                      )}
+                      {linkCandidates.map((c) => (
+                        <button
+                          key={c.id}
+                          className="vt-link-option"
+                          onClick={() => {
+                            setParent(w.id, c.id);
+                            setLinkingId(null);
+                          }}
+                        >
+                          <span className="vt-list-word">{c.tr}</span>{" "}
+                          <span className="vt-list-tr">— {c.ru}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {tab === "list" && openWordObj && (
+        <div>
+          <button
+            className="vt-back-btn"
+            onClick={() => {
+              setOpenWordId(null);
+              setLinkingId(null);
+            }}
+          >
+            <ChevronLeft size={16} /> All words
+          </button>
+
+          <div className="vt-card">
+            <div className="vt-detail-word">{openWordObj.tr}</div>
+            {openWordObj.transcription && (
+              <div className="vt-list-transcription" style={{ marginTop: 2 }}>[{openWordObj.transcription}]</div>
+            )}
+            <div style={{ marginTop: 6, fontSize: 15 }}>{openWordObj.ru}</div>
+            <div className="vt-list-score" style={{ marginTop: 8 }}>
+              ✓{openWordObj.correct} ✗{openWordObj.wrong}
             </div>
+          </div>
+
+          <div className="vt-section-title">Examples ({openExamples.length})</div>
+          <div className="vt-card" style={{ padding: "4px" }}>
+            {openExamples.length === 0 && <div className="vt-empty">No examples yet.</div>}
+            {openExamples.map((ex) => (
+              <div className="vt-list-item" key={ex.id}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="vt-list-word">{ex.tr}</div>
+                  <div className="vt-list-tr">{ex.ru}</div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                  <button className="vt-icon-btn" title="Move back to the word list" onClick={() => setParent(ex.id, null)}>
+                    <Unlink size={15} />
+                  </button>
+                  <button className="vt-del-btn" title="Delete example" onClick={() => deleteWord(ex.id)}>
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </div>
             ))}
           </div>
+
+          <div className="vt-section-title">Add example</div>
+          <div className="vt-card">
+            <div className="vt-row">
+              <div>
+                <span className="vt-field-label">{LANGUAGE.name} phrase</span>
+                <input
+                  className="vt-input"
+                  value={exTr}
+                  onChange={(e) => setExTr(e.target.value)}
+                  placeholder={`e.g. ${openWordObj.tr} ...`}
+                />
+              </div>
+              <div>
+                <span className="vt-field-label">{NATIVE.name} translation (leave empty to translate automatically)</span>
+                <input className="vt-input" value={exRu} onChange={(e) => setExRu(e.target.value)} />
+              </div>
+            </div>
+            <button className="vt-btn vt-btn-primary vt-btn-block" onClick={handleAddExample} disabled={exLoading || !exTr.trim()}>
+              {exLoading ? <Loader2 size={15} className="vt-spin" /> : <Plus size={15} />}
+              Save example
+            </button>
+            {exMsg && <div className="vt-msg">{exMsg}</div>}
+          </div>
+
+          {suggestions.length > 0 && (
+            <>
+              <div className="vt-section-title">Phrases in your list with this word ({suggestions.length})</div>
+              <div className="vt-card" style={{ padding: "4px" }}>
+                {suggestions.map((w) => (
+                  <div className="vt-list-item" key={w.id}>
+                    <div style={{ minWidth: 0 }}>
+                      <div className="vt-list-word">{w.tr}</div>
+                      <div className="vt-list-tr">{w.ru}</div>
+                    </div>
+                    <button
+                      className="vt-btn vt-btn-ghost"
+                      style={{ padding: "7px 10px", flexShrink: 0 }}
+                      onClick={() => setParent(w.id, openWordObj.id)}
+                    >
+                      <Plus size={14} /> Move here
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {suggestions.length > 1 && (
+                <button
+                  className="vt-btn vt-btn-ghost vt-btn-block"
+                  style={{ marginTop: 10 }}
+                  onClick={() => suggestions.forEach((w) => setParent(w.id, openWordObj.id))}
+                >
+                  Move all {suggestions.length} here
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
     </div>

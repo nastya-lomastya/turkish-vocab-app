@@ -24,7 +24,9 @@ export function ensureTable() {
       )
     `
       .then(() => sql`ALTER TABLE words ADD COLUMN IF NOT EXISTS transcription TEXT NOT NULL DEFAULT ''`)
-      .then(() => sql`ALTER TABLE words DROP COLUMN IF EXISTS forms`);
+      .then(() => sql`ALTER TABLE words DROP COLUMN IF EXISTS forms`)
+      // Examples/expressions are stored as words that point at their parent word.
+      .then(() => sql`ALTER TABLE words ADD COLUMN IF NOT EXISTS parent_id TEXT`);
   }
   return tableReady;
 }

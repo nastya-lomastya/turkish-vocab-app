@@ -12,12 +12,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (body.transcription !== undefined) {
     await sql`UPDATE words SET transcription = ${body.transcription} WHERE id = ${id}`;
   }
+  if (body.parent_id !== undefined) {
+    // null detaches an example back into the main word list
+    await sql`UPDATE words SET parent_id = ${body.parent_id} WHERE id = ${id}`;
+  }
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   await ensureTable();
   const { id } = await params;
-  await sql`DELETE FROM words WHERE id = ${id}`;
+  // Deleting a word also deletes its examples.
+  await sql`DELETE FROM words WHERE id = ${id} OR parent_id = ${id}`;
   return NextResponse.json({ ok: true });
 }
