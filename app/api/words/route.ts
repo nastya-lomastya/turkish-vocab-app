@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql, ensureTable } from "@/lib/db";
+import { LANGUAGE, NATIVE } from "@/lib/language";
 
 export async function GET() {
   await ensureTable();
@@ -10,7 +11,10 @@ export async function GET() {
 export async function POST(req: Request) {
   await ensureTable();
   const body = await req.json();
-  const { id, tr, ru, added, parent_id } = body;
+  const { id, added, parent_id } = body;
+  // Everything is stored in lowercase (locale-aware, so Turkish I/İ → ı/i).
+  const tr = String(body.tr ?? "").trim().toLocaleLowerCase(LANGUAGE.code);
+  const ru = String(body.ru ?? "").trim().toLocaleLowerCase(NATIVE.code);
 
   if (!id || !tr || !ru) {
     return NextResponse.json({ error: "id, tr and ru are required" }, { status: 400 });

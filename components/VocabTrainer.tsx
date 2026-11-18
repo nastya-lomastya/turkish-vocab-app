@@ -55,6 +55,18 @@ function phraseHasWord(phrase: string, word: string): boolean {
   return tokens.some((t) => stems.some((st) => t.startsWith(st)));
 }
 
+// Everything is stored in lowercase. Uses the language's own locale so
+// Turkish I/İ become ı/i correctly.
+function lowerForeign(s: string) {
+  return s.toLocaleLowerCase(LANGUAGE.code);
+}
+function lowerNative(s: string) {
+  return s.toLocaleLowerCase(NATIVE.code);
+}
+function normalizeCase(w: Word): Word {
+  return { ...w, tr: lowerForeign(w.tr.trim()), ru: lowerNative(w.ru.trim()) };
+}
+
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
@@ -313,12 +325,12 @@ export default function VocabTrainer() {
       trWord = addDirection === "tr-ru" ? a : b;
       ruWord = addDirection === "tr-ru" ? b : a;
     }
-    const exists = words.some((w) => w.tr.toLowerCase() === trWord.toLowerCase());
+    const exists = words.some((w) => lowerForeign(w.tr) === lowerForeign(trWord));
     if (exists) {
       setAddMsg("This word is already in your list.");
       return;
     }
-    const word: Word = {
+    const word: Word = normalizeCase({
       id: uid(),
       tr: trWord,
       ru: ruWord,
@@ -326,7 +338,7 @@ export default function VocabTrainer() {
       correct: 0,
       wrong: 0,
       parent_id: null,
-    };
+    });
     setWords((prev) => [word, ...prev]);
     await apiAddWord(word);
     setNewTr("");
@@ -341,7 +353,7 @@ export default function VocabTrainer() {
     const seen = new Set<string>();
     const unique: string[] = [];
     found.forEach((w) => {
-      const lower = w.toLowerCase();
+      const lower = lowerForeign(w);
       if (!seen.has(lower) && lower.length > 1) {
         seen.add(lower);
         unique.push(lower);
@@ -361,7 +373,7 @@ export default function VocabTrainer() {
       setTextMsg("Select at least one word.");
       return;
     }
-    const already = new Set(words.map((w) => w.tr.toLowerCase()));
+    const already = new Set(words.map((w) => lowerForeign(w.tr)));
     const toAdd = selectedWords.filter((w) => !already.has(w));
     if (toAdd.length === 0) {
       setTextMsg("These words are already in your list.");
@@ -374,7 +386,7 @@ export default function VocabTrainer() {
       )}. Ответь СТРОГО в виде JSON-объекта вида {"слово":"перевод"} без markdown-разметки, без пояснений, только сам JSON.`;
       const raw = await callClaude(prompt);
       const map = JSON.parse(stripFence(raw));
-      const newWords: Word[] = toAdd.map((w) => ({
+      const newWords: Word[] = toAdd.map((w) => normalizeCase({
         id: uid(),
         tr: w,
         ru: (typeof map[w] === "string" ? map[w] : map[w]?.ru) || "",
@@ -426,7 +438,7 @@ export default function VocabTrainer() {
         const seen = new Set(prev.map((p) => p.word));
         const merged = [...prev];
         arr.forEach((w: string) => {
-          const lower = String(w).toLowerCase();
+          const lower = lowerForeign(String(w));
           if (!seen.has(lower)) {
             seen.add(lower);
             merged.push({ word: lower, selected: false });
@@ -550,7 +562,7 @@ export default function VocabTrainer() {
   async function handleAddExample() {
     if (!openWordId || !exTr.trim()) return;
     const tr = exTr.trim();
-    if (words.some((w) => w.tr.toLowerCase() === tr.toLowerCase())) {
+    if (words.some((w) => lowerForeign(w.tr) === lowerForeign(tr))) {
       setExMsg("This phrase is already in your list — see the suggestions below to move it here.");
       return;
     }
@@ -571,7 +583,7 @@ export default function VocabTrainer() {
       setExLoading(false);
       return;
     }
-    const ex: Word = {
+    const ex: Word = normalizeCase({
       id: uid(),
       tr,
       ru,
@@ -579,7 +591,7 @@ export default function VocabTrainer() {
       correct: 0,
       wrong: 0,
       parent_id: openWordId,
-    };
+    });
     setWords((prev) => [ex, ...prev]);
     await apiAddWord(ex);
     setExTr("");
