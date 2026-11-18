@@ -31,7 +31,7 @@ type Word = {
   added: number;
   correct: number;
   wrong: number;
-  parent_id: string | null; // set => this entry is an example/expression of another word
+  parents: string[]; // ids of the words this entry is an example of; empty => main-list word
 };
 
 // Rough Turkish stem for spotting a word inside phrases: drops the -mak/-mek
@@ -112,10 +112,14 @@ async function apiListWords(): Promise<Word[]> {
     return [];
   }
   const json = await res.json();
+  const parents: Record<string, string[]> = {};
+  (json.links || []).forEach((l: { example_id: string; word_id: string }) => {
+    (parents[l.example_id] ||= []).push(l.word_id);
+  });
   return (json.words || []).map((w: any) => ({
     ...w,
     added: Number(w.added),
-    parent_id: w.parent_id ?? null,
+    parents: parents[w.id] || [],
   }));
 }
 
@@ -130,12 +134,21 @@ async function apiAddWord(word: Word) {
 
 async function apiUpdateWord(
   id: string,
-  patch: Partial<Pick<Word, "correct" | "wrong" | "parent_id">>
+  patch: Partial<Pick<Word, "correct" | "wrong">>
 ) {
   const res = await fetch(`/api/words/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
+  });
+  if (res.status === 401) redirectToLogin();
+}
+
+async function apiLink(exampleId: string, wordId: string, attach: boolean) {
+  const res = await fetch("/api/links", {
+    method: attach ? "POST" : "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ example_id: exampleId, word_id: wordId }),
   });
   if (res.status === 401) redirectToLogin();
 }
@@ -246,7 +259,7 @@ export default function VocabTrainer() {
   const [linkSearch, setLinkSearch] = useState("");
 
   // Main list = top-level words; examples live inside their parent word.
-  const topLevel = words.filter((w) => !w.parent_id);
+  const topLevel = words.filter((w) => w.parents.length === 0);
   const quizWords = topLevel;
   const exampleCount = words.length - topLevel.length;
 
@@ -337,7 +350,7 @@ export default function VocabTrainer() {
       added: Date.now(),
       correct: 0,
       wrong: 0,
-      parent_id: null,
+      parents: [],
     });
     setWords((prev) => [word, ...prev]);
     await apiAddWord(word);
@@ -393,7 +406,7 @@ export default function VocabTrainer() {
         added: Date.now(),
         correct: 0,
         wrong: 0,
-        parent_id: null,
+        parents: [],
       }));
       setWords((prev) => [...newWords, ...prev]);
       await Promise.all(newWords.map((w) => apiAddWord(w)));
@@ -534,36 +547,69 @@ export default function VocabTrainer() {
   }
 
   async function deleteWord(id: string) {
-    const n = examplesOf(id).length;
-    if (n > 0 && !window.confirm(`Delete this word and its ${n} example${n === 1 ? "" : "s"}?`)) return;
-    setWords((prev) => prev.filter((w) => w.id !== id && w.parent_id !== id));
+    // Examples that belong only to this word are deleted with it; shared ones
+    // just lose the link.
+    const own = examplesOf(id).filter((e) => e.parents.length === 1).length;
+    if (own > 0 && !window.confirm(`Delete this word and its ${own} example${own === 1 ? "" : "s"}?`)) return;
+    setWords((prev) =>
+      prev
+        .filter((w) => w.id !== id && !(w.parents.length === 1 && w.parents[0] === id))
+        .map((w) => (w.parents.includes(id) ? { ...w, parents: w.parents.filter((p) => p !== id) } : w))
+    );
     if (openWordId === id) setOpenWordId(null);
     await apiDeleteWord(id);
   }
 
   // ---- examples ----
   function examplesOf(id: string): Word[] {
-    return words.filter((w) => w.parent_id === id).sort((a, b) => a.added - b.added);
+    return words.filter((w) => w.parents.includes(id)).sort((a, b) => a.added - b.added);
   }
 
   function openWord(id: string) {
     setOpenWordId(id);
+    setLinkingId(null);
     setExTr("");
     setExRu("");
     setExMsg("");
     window.scrollTo({ top: 0 });
   }
 
-  async function setParent(id: string, parentId: string | null) {
-    setWords((prev) => prev.map((w) => (w.id === id ? { ...w, parent_id: parentId } : w)));
-    await apiUpdateWord(id, { parent_id: parentId });
+  async function linkExample(exampleId: string, wordId: string) {
+    setWords((prev) =>
+      prev.map((w) =>
+        w.id === exampleId && !w.parents.includes(wordId) ? { ...w, parents: [...w.parents, wordId] } : w
+      )
+    );
+    await apiLink(exampleId, wordId, true);
+  }
+
+  // With no links left the example goes back to the main word list.
+  async function unlinkExample(exampleId: string, wordId: string) {
+    setWords((prev) =>
+      prev.map((w) => (w.id === exampleId ? { ...w, parents: w.parents.filter((p) => p !== wordId) } : w))
+    );
+    await apiLink(exampleId, wordId, false);
+  }
+
+  function wordName(id: string) {
+    return words.find((w) => w.id === id)?.tr || "";
   }
 
   async function handleAddExample() {
     if (!openWordId || !exTr.trim()) return;
     const tr = exTr.trim();
-    if (words.some((w) => lowerForeign(w.tr) === lowerForeign(tr))) {
-      setExMsg("This phrase is already in your list — see the suggestions below to move it here.");
+    const existing = words.find((w) => lowerForeign(w.tr) === lowerForeign(tr));
+    if (existing) {
+      if (existing.id === openWordId || existing.parents.includes(openWordId)) {
+        setExMsg("This phrase is already here.");
+      } else if (examplesOf(existing.id).length > 0) {
+        setExMsg("This is a word with its own examples, so it can't be an example.");
+      } else {
+        await linkExample(existing.id, openWordId);
+        setExTr("");
+        setExRu("");
+        setExMsg("It was already in your list — attached here.");
+      }
       return;
     }
     setExLoading(true);
@@ -590,7 +636,7 @@ export default function VocabTrainer() {
       added: Date.now(),
       correct: 0,
       wrong: 0,
-      parent_id: openWordId,
+      parents: [openWordId],
     });
     setWords((prev) => [ex, ...prev]);
     await apiAddWord(ex);
@@ -605,13 +651,22 @@ export default function VocabTrainer() {
   const matches = (w: Word) =>
     w.tr.toLocaleLowerCase("tr").includes(searchQuery) || w.ru.toLowerCase().includes(searchQuery);
   const filteredList = searchQuery
-    ? sortedList.filter((w) => matches(w) || words.some((e) => e.parent_id === w.id && matches(e)))
+    ? sortedList.filter((w) => matches(w) || words.some((e) => e.parents.includes(w.id) && matches(e)))
     : sortedList;
 
   const openWordObj = openWordId ? words.find((w) => w.id === openWordId) || null : null;
   const openExamples = openWordObj ? examplesOf(openWordObj.id) : [];
+  // Phrases that seem to contain this word and aren't attached to it yet
+  // (including ones already attached to other words).
   const suggestions = openWordObj
-    ? topLevel.filter((w) => w.id !== openWordObj.id && /\s/.test(w.tr.trim()) && phraseHasWord(w.tr, openWordObj.tr))
+    ? words.filter(
+        (w) =>
+          w.id !== openWordObj.id &&
+          !w.parents.includes(openWordObj.id) &&
+          /\s/.test(w.tr.trim()) &&
+          !words.some((e) => e.parents.includes(w.id)) &&
+          phraseHasWord(w.tr, openWordObj.tr)
+      )
     : [];
   // Candidates for the "attach to word" picker: words that look like they
   // appear in the phrase come first, then whatever matches the search.
@@ -619,7 +674,7 @@ export default function VocabTrainer() {
   const linkQuery = linkSearch.trim().toLocaleLowerCase("tr");
   const linkCandidates = linkingObj
     ? (() => {
-        const pool = sortedList.filter((w) => w.id !== linkingObj.id);
+        const pool = sortedList.filter((w) => w.id !== linkingObj.id && !linkingObj.parents.includes(w.id));
         const guessed = pool.filter((w) => phraseHasWord(linkingObj.tr, w.tr));
         if (!linkQuery) return guessed;
         const searched = pool.filter(
@@ -632,6 +687,42 @@ export default function VocabTrainer() {
   function toggleLinking(id: string) {
     setLinkingId((cur) => (cur === id ? null : id));
     setLinkSearch("");
+  }
+
+  function renderLinkPanel(entry: Word) {
+    return (
+      <div className="vt-link-panel">
+        <span className="vt-field-label">
+          {entry.parents.length === 0 ? `Attach “${entry.tr}” as an example of:` : `Also attach “${entry.tr}” to:`}
+        </span>
+        <input
+          className="vt-input"
+          autoFocus
+          value={linkSearch}
+          onChange={(e) => setLinkSearch(e.target.value)}
+          placeholder="Search for the word..."
+        />
+        <div style={{ marginTop: 6 }}>
+          {linkCandidates.length === 0 && (
+            <div className="vt-list-tr" style={{ padding: "8px 4px" }}>
+              {linkQuery ? "No words found." : "Type to find the word."}
+            </div>
+          )}
+          {linkCandidates.map((c) => (
+            <button
+              key={c.id}
+              className="vt-link-option"
+              onClick={() => {
+                linkExample(entry.id, c.id);
+                setLinkingId(null);
+              }}
+            >
+              <span className="vt-list-word">{c.tr}</span> <span className="vt-list-tr">— {c.ru}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   const currentExamples = current ? examplesOf(current.id) : [];
@@ -1061,6 +1152,16 @@ export default function VocabTrainer() {
           border: 1.5px solid var(--sand-line);
         }
         .vt-examples-panel .vt-list-item { padding: 10px 12px; }
+        .vt-also-in { font-size: 12px; color: var(--ink-soft); margin-top: 3px; }
+        .vt-also-link {
+          background: none;
+          border: none;
+          padding: 0;
+          font: inherit;
+          color: var(--tile-blue-deep);
+          text-decoration: underline;
+          cursor: pointer;
+        }
         .vt-link-panel {
           padding: 10px 12px 12px;
           background: #FFFFFF;
@@ -1375,7 +1476,7 @@ export default function VocabTrainer() {
               <div className="vt-empty">{searchQuery ? "No words match your search." : "Your list is empty."}</div>
             )}
             {filteredList.map((w) => {
-              const exCount = words.filter((e) => e.parent_id === w.id).length;
+              const exCount = words.filter((e) => e.parents.includes(w.id)).length;
               return (
                 <div key={w.id}>
                 <div className="vt-list-item clickable" onClick={() => openWord(w.id)}>
@@ -1413,38 +1514,7 @@ export default function VocabTrainer() {
                     <ChevronRight size={16} color="var(--ink-soft)" />
                   </div>
                 </div>
-                {linkingId === w.id && (
-                  <div className="vt-link-panel">
-                    <span className="vt-field-label">Attach “{w.tr}” as an example of:</span>
-                    <input
-                      className="vt-input"
-                      autoFocus
-                      value={linkSearch}
-                      onChange={(e) => setLinkSearch(e.target.value)}
-                      placeholder="Search for the word..."
-                    />
-                    <div style={{ marginTop: 6 }}>
-                      {linkCandidates.length === 0 && (
-                        <div className="vt-list-tr" style={{ padding: "8px 4px" }}>
-                          {linkQuery ? "No words found." : "Type to find the word."}
-                        </div>
-                      )}
-                      {linkCandidates.map((c) => (
-                        <button
-                          key={c.id}
-                          className="vt-link-option"
-                          onClick={() => {
-                            setParent(w.id, c.id);
-                            setLinkingId(null);
-                          }}
-                        >
-                          <span className="vt-list-word">{c.tr}</span>{" "}
-                          <span className="vt-list-tr">— {c.ru}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {linkingId === w.id && renderLinkPanel(w)}
                 </div>
               );
             })}
@@ -1475,22 +1545,53 @@ export default function VocabTrainer() {
           <div className="vt-section-title">Examples ({openExamples.length})</div>
           <div className="vt-card" style={{ padding: "4px" }}>
             {openExamples.length === 0 && <div className="vt-empty">No examples yet.</div>}
-            {openExamples.map((ex) => (
-              <div className="vt-list-item" key={ex.id}>
-                <div style={{ minWidth: 0 }}>
-                  <div className="vt-list-word">{ex.tr}</div>
-                  <div className="vt-list-tr">{ex.ru}</div>
+            {openExamples.map((ex) => {
+              const others = ex.parents.filter((p) => p !== openWordObj.id);
+              return (
+                <div key={ex.id}>
+                  <div className="vt-list-item">
+                    <div style={{ minWidth: 0 }}>
+                      <div className="vt-list-word">{ex.tr}</div>
+                      <div className="vt-list-tr">{ex.ru}</div>
+                      {others.length > 0 && (
+                        <div className="vt-also-in">
+                          also in:{" "}
+                          {others.map((p, i) => (
+                            <span key={p}>
+                              {i > 0 && ", "}
+                              <button className="vt-also-link" onClick={() => openWord(p)}>
+                                {wordName(p)}
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                      <button
+                        className="vt-icon-btn"
+                        title="Also attach to another word"
+                        style={linkingId === ex.id ? { color: "var(--tile-blue-deep)" } : undefined}
+                        onClick={() => toggleLinking(ex.id)}
+                      >
+                        <Link2 size={15} />
+                      </button>
+                      <button
+                        className="vt-icon-btn"
+                        title={others.length > 0 ? "Remove from this word" : "Move back to the word list"}
+                        onClick={() => unlinkExample(ex.id, openWordObj.id)}
+                      >
+                        <Unlink size={15} />
+                      </button>
+                      <button className="vt-del-btn" title="Delete example everywhere" onClick={() => deleteWord(ex.id)}>
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </div>
+                  {linkingId === ex.id && renderLinkPanel(ex)}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                  <button className="vt-icon-btn" title="Move back to the word list" onClick={() => setParent(ex.id, null)}>
-                    <Unlink size={15} />
-                  </button>
-                  <button className="vt-del-btn" title="Delete example" onClick={() => deleteWord(ex.id)}>
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <div className="vt-section-title">Add example</div>
@@ -1526,13 +1627,16 @@ export default function VocabTrainer() {
                     <div style={{ minWidth: 0 }}>
                       <div className="vt-list-word">{w.tr}</div>
                       <div className="vt-list-tr">{w.ru}</div>
+                      {w.parents.length > 0 && (
+                        <div className="vt-also-in">in: {w.parents.map(wordName).join(", ")}</div>
+                      )}
                     </div>
                     <button
                       className="vt-btn vt-btn-ghost"
                       style={{ padding: "7px 10px", flexShrink: 0 }}
-                      onClick={() => setParent(w.id, openWordObj.id)}
+                      onClick={() => linkExample(w.id, openWordObj.id)}
                     >
-                      <Plus size={14} /> Move here
+                      <Plus size={14} /> {w.parents.length > 0 ? "Add here too" : "Move here"}
                     </button>
                   </div>
                 ))}
@@ -1541,9 +1645,9 @@ export default function VocabTrainer() {
                 <button
                   className="vt-btn vt-btn-ghost vt-btn-block"
                   style={{ marginTop: 10 }}
-                  onClick={() => suggestions.forEach((w) => setParent(w.id, openWordObj.id))}
+                  onClick={() => suggestions.forEach((w) => linkExample(w.id, openWordObj.id))}
                 >
-                  Move all {suggestions.length} here
+                  Add all {suggestions.length} here
                 </button>
               )}
             </>

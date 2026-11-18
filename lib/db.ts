@@ -23,10 +23,38 @@ export function ensureTable() {
       )
     `
       .then(() => sql`ALTER TABLE words DROP COLUMN IF EXISTS forms`)
-      // Examples/expressions are stored as words that point at their parent word.
-      .then(() => sql`ALTER TABLE words ADD COLUMN IF NOT EXISTS parent_id TEXT`);
+      // Examples/expressions are ordinary rows in "words" linked to one or
+      // more words via example_links. A word with no links is a main-list word.
+      .then(
+        () => sql`
+          CREATE TABLE IF NOT EXISTS example_links (
+            example_id TEXT NOT NULL,
+            word_id TEXT NOT NULL,
+            PRIMARY KEY (example_id, word_id)
+          )
+        `
+      )
+      .then(() => migrateParentId())
+      .catch((e) => {
+        tableReady = null; // retry on the next request instead of staying broken
+        throw e;
+      });
   }
   return tableReady;
+}
+
+// One-time migration from the old single-parent column (words.parent_id).
+async function migrateParentId() {
+  const col = await sql`
+    SELECT 1 FROM information_schema.columns WHERE table_name = 'words' AND column_name = 'parent_id'
+  `;
+  if (col.length === 0) return;
+  await sql`
+    INSERT INTO example_links (example_id, word_id)
+    SELECT id, parent_id FROM words WHERE parent_id IS NOT NULL
+    ON CONFLICT DO NOTHING
+  `;
+  await sql`ALTER TABLE words DROP COLUMN parent_id`;
 }
 
 let streakTableReady: Promise<unknown> | null = null;

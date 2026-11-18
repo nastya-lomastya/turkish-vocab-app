@@ -9,17 +9,25 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (body.correct !== undefined && body.wrong !== undefined) {
     await sql`UPDATE words SET correct = ${body.correct}, wrong = ${body.wrong} WHERE id = ${id}`;
   }
-  if (body.parent_id !== undefined) {
-    // null detaches an example back into the main word list
-    await sql`UPDATE words SET parent_id = ${body.parent_id} WHERE id = ${id}`;
-  }
   return NextResponse.json({ ok: true });
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   await ensureTable();
   const { id } = await params;
-  // Deleting a word also deletes its examples.
-  await sql`DELETE FROM words WHERE id = ${id} OR parent_id = ${id}`;
+  // Deleting a word also deletes the examples that belong only to it;
+  // examples shared with other words just lose this link.
+  await sql`
+    DELETE FROM words
+    WHERE id IN (SELECT example_id FROM example_links WHERE word_id = ${id})
+      AND NOT EXISTS (
+        SELECT 1 FROM example_links l WHERE l.example_id = words.id AND l.word_id <> ${id}
+      )
+  `;
+  await sql`DELETE FROM words WHERE id = ${id}`;
+  await sql`
+    DELETE FROM example_links
+    WHERE word_id = ${id} OR example_id = ${id} OR example_id NOT IN (SELECT id FROM words)
+  `;
   return NextResponse.json({ ok: true });
 }
