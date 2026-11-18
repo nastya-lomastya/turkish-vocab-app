@@ -53,7 +53,6 @@ export type NativeConfig = {
   // overlap with the foreign language's Latin alphabet — Russian's Cyrillic
   // qualifies, English doesn't (falls back to trusting the direction toggle).
   scriptRegex?: RegExp;
-  transcriptionInstruction: string; // how Claude should write pronunciation
   glossExample: string; // example gloss word shown as input placeholder
 };
 
@@ -63,8 +62,6 @@ const ru: NativeConfig = {
   adjM: "русский",
   adjN: "русское",
   scriptRegex: /[а-яёА-ЯЁ]/,
-  transcriptionInstruction:
-    "кириллицей — как оно реально произносится, обычными русскими буквами, без специальных фонетических символов",
   glossExample: "уставший",
 };
 
@@ -73,8 +70,6 @@ const en: NativeConfig = {
   name: "English",
   adjM: "английский",
   adjN: "английское",
-  transcriptionInstruction:
-    'латиницей, английской фонетической транслитерацией (readable respelling, например "boo-koo"), без специальных символов IPA',
   glossExample: "tired",
 };
 

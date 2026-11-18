@@ -10,15 +10,15 @@ export async function GET() {
 export async function POST(req: Request) {
   await ensureTable();
   const body = await req.json();
-  const { id, tr, ru, added, transcription, parent_id } = body;
+  const { id, tr, ru, added, parent_id } = body;
 
   if (!id || !tr || !ru) {
     return NextResponse.json({ error: "id, tr and ru are required" }, { status: 400 });
   }
 
   await sql`
-    INSERT INTO words (id, tr, ru, added, correct, wrong, transcription, parent_id)
-    VALUES (${id}, ${tr}, ${ru}, ${added ?? Date.now()}, 0, 0, ${transcription ?? ""}, ${parent_id ?? null})
+    INSERT INTO words (id, tr, ru, added, correct, wrong, parent_id)
+    VALUES (${id}, ${tr}, ${ru}, ${added ?? Date.now()}, 0, 0, ${parent_id ?? null})
     ON CONFLICT (id) DO NOTHING
   `;
   return NextResponse.json({ ok: true });

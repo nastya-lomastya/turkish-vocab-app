@@ -9,9 +9,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (body.correct !== undefined && body.wrong !== undefined) {
     await sql`UPDATE words SET correct = ${body.correct}, wrong = ${body.wrong} WHERE id = ${id}`;
   }
-  if (body.transcription !== undefined) {
-    await sql`UPDATE words SET transcription = ${body.transcription} WHERE id = ${id}`;
-  }
   if (body.parent_id !== undefined) {
     // null detaches an example back into the main word list
     await sql`UPDATE words SET parent_id = ${body.parent_id} WHERE id = ${id}`;

@@ -19,11 +19,9 @@ export function ensureTable() {
         ru TEXT NOT NULL,
         added BIGINT NOT NULL,
         correct INT NOT NULL DEFAULT 0,
-        wrong INT NOT NULL DEFAULT 0,
-        transcription TEXT NOT NULL DEFAULT ''
+        wrong INT NOT NULL DEFAULT 0
       )
     `
-      .then(() => sql`ALTER TABLE words ADD COLUMN IF NOT EXISTS transcription TEXT NOT NULL DEFAULT ''`)
       .then(() => sql`ALTER TABLE words DROP COLUMN IF EXISTS forms`)
       // Examples/expressions are stored as words that point at their parent word.
       .then(() => sql`ALTER TABLE words ADD COLUMN IF NOT EXISTS parent_id TEXT`);
