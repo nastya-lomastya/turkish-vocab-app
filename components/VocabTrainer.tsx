@@ -786,7 +786,7 @@ export default function VocabTrainer() {
 
         .vt-header {
           display: flex;
-          align-items: baseline;
+          align-items: center;
           justify-content: space-between;
           gap: 12px;
           margin-bottom: 20px;
@@ -806,6 +806,10 @@ export default function VocabTrainer() {
           color: var(--ink-soft);
           white-space: nowrap;
           flex-shrink: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          line-height: 1.5;
         }
 
         .vt-tabs {
@@ -1193,7 +1197,8 @@ export default function VocabTrainer() {
       <div className="vt-header">
         <span className="vt-title">{LANGUAGE.appTitle}</span>
         <span className="vt-count">
-          {topLevel.length} words{exampleCount > 0 ? ` · ${exampleCount} examples` : ""}
+          <span>{topLevel.length} words</span>
+          {exampleCount > 0 && <span>{exampleCount} examples</span>}
         </span>
       </div>
 
