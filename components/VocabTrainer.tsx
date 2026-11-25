@@ -187,6 +187,11 @@ function localDayKey(d: Date = new Date()): string {
 
 const STREAK_GOAL_SECONDS = 600;
 
+// Quiz picking: a word won't come back within this many questions, and a
+// hard word is at most this many times likelier than a new one.
+const QUIZ_COOLDOWN = 20;
+const QUIZ_MAX_WEIGHT = 3;
+
 async function callClaude(prompt: string, maxTokens?: number): Promise<string> {
   const res = await fetch("/api/claude", {
     method: "POST",
@@ -249,6 +254,7 @@ export default function VocabTrainer() {
   const [sessionStats, setSessionStats] = useState({ correct: 0, wrong: 0 });
   const [showExamples, setShowExamples] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const recentQuizIds = useRef<string[]>([]);
 
   // Word detail (examples) state
   const [openWordId, setOpenWordId] = useState<string | null>(null);
@@ -624,8 +630,9 @@ export default function VocabTrainer() {
   // Weighted pick based on all-time correct/wrong: words you consistently get
   // right become rare (never impossible), words you miss or haven't tried yet
   // come up more often. Persists across sessions since it reads the DB counts.
+  // The weight is capped so a few hard words can't take over the quiz.
   function pickWeighted(pool: Word[]): Word {
-    const weights = pool.map((w) => (w.wrong + 1) / (w.correct + 1));
+    const weights = pool.map((w) => Math.min(QUIZ_MAX_WEIGHT, (w.wrong + 1) / (w.correct + 1)));
     const total = weights.reduce((a, b) => a + b, 0);
     let r = Math.random() * total;
     for (let i = 0; i < pool.length; i++) {
@@ -640,8 +647,13 @@ export default function VocabTrainer() {
       setCurrent(null);
       return;
     }
-    const pool = list.length > 1 && current ? list.filter((w) => w.id !== current.id) : list;
-    const pick = pickWeighted(pool);
+    // Cooldown: skip words shown in the last QUIZ_COOLDOWN questions (fewer
+    // if the list is small, so there's always something left to pick).
+    const cooldown = Math.min(QUIZ_COOLDOWN, list.length - 1);
+    const recent = cooldown > 0 ? recentQuizIds.current.slice(-cooldown) : [];
+    const pool = recent.length > 0 ? list.filter((w) => !recent.includes(w.id)) : list;
+    const pick = pickWeighted(pool.length > 0 ? pool : list);
+    recentQuizIds.current = [...recentQuizIds.current.filter((id) => id !== pick.id), pick.id].slice(-QUIZ_COOLDOWN);
     setCurrent(pick);
     setAnswer("");
     setFeedback(null);
