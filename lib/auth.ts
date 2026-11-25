@@ -21,4 +21,4 @@ export const SESSION_COOKIE = "vt_session";
 
 // Sliding session: every authenticated request renews the cookie for this long.
 // Being idle (no requests at all) past this window signs you out.
-export const SESSION_MAX_AGE_SECONDS = 60 * 5;
+export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days

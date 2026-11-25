@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Unlink,
   Link2,
+  Pencil,
   MessageSquareQuote,
 } from "lucide-react";
 import { LANGUAGE, NATIVE } from "@/lib/language";
@@ -134,7 +135,7 @@ async function apiAddWord(word: Word) {
 
 async function apiUpdateWord(
   id: string,
-  patch: Partial<Pick<Word, "correct" | "wrong">>
+  patch: Partial<Pick<Word, "correct" | "wrong" | "tr" | "ru">>
 ) {
   const res = await fetch(`/api/words/${id}`, {
     method: "PATCH",
@@ -226,6 +227,8 @@ export default function VocabTrainer() {
   const [addDirection, setAddDirection] = useState<"tr-ru" | "ru-tr">("tr-ru");
   const [newTr, setNewTr] = useState("");
   const [newRu, setNewRu] = useState("");
+  const [newExamples, setNewExamples] = useState("");
+  const [addSaving, setAddSaving] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [addMsg, setAddMsg] = useState("");
 
@@ -253,6 +256,12 @@ export default function VocabTrainer() {
   const [exRu, setExRu] = useState("");
   const [exLoading, setExLoading] = useState(false);
   const [exMsg, setExMsg] = useState("");
+
+  // Editing a saved word or example in place
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTr, setEditTr] = useState("");
+  const [editRu, setEditRu] = useState("");
+  const [editMsg, setEditMsg] = useState("");
 
   // "Attach to word" picker in the Words list
   const [linkingId, setLinkingId] = useState<string | null>(null);
@@ -338,9 +347,29 @@ export default function VocabTrainer() {
       trWord = addDirection === "tr-ru" ? a : b;
       ruWord = addDirection === "tr-ru" ? b : a;
     }
-    const exists = words.some((w) => lowerForeign(w.tr) === lowerForeign(trWord));
-    if (exists) {
-      setAddMsg("This word is already in your list.");
+    const exampleLines = parseExampleLines(newExamples);
+    const existing = words.find((w) => lowerForeign(w.tr) === lowerForeign(trWord));
+    if (existing) {
+      if (exampleLines.length === 0 || existing.parents.length > 0) {
+        setAddMsg(
+          existing.parents.length > 0
+            ? "This is already in your list as an example."
+            : "This word is already in your list."
+        );
+        return;
+      }
+      // Word exists: just add the new examples to it.
+      setAddSaving(true);
+      const n = await addExamplesTo(existing.id, exampleLines);
+      setAddSaving(false);
+      if (n < 0) {
+        setAddMsg("Couldn't translate the examples automatically, add translations after a dash.");
+        return;
+      }
+      setNewTr("");
+      setNewRu("");
+      setNewExamples("");
+      setAddMsg(`Word was already in your list — added ${n} example${n === 1 ? "" : "s"} to it.`);
       return;
     }
     const word: Word = normalizeCase({
@@ -352,12 +381,137 @@ export default function VocabTrainer() {
       wrong: 0,
       parents: [],
     });
+    setAddSaving(true);
     setWords((prev) => [word, ...prev]);
     await apiAddWord(word);
+    let n = 0;
+    if (exampleLines.length > 0) n = await addExamplesTo(word.id, exampleLines);
+    setAddSaving(false);
     setNewTr("");
     setNewRu("");
-    setAddMsg("Added!");
-    setTimeout(() => setAddMsg(""), 1500);
+    if (n < 0) {
+      // keep the examples text so nothing typed is lost
+      setAddMsg("Word added, but couldn't translate the examples — add translations after a dash and save again.");
+      return;
+    }
+    setNewExamples("");
+    setAddMsg(n > 0 ? `Added with ${n} example${n === 1 ? "" : "s"}!` : "Added!");
+    setTimeout(() => setAddMsg(""), 2000);
+  }
+
+  // "phrase" or "phrase — translation" (also " - " / " – "), one per line.
+  function parseExampleLines(text: string): { tr: string; ru: string }[] {
+    return text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const m = line.match(/^(.*?)\s+[—–-]\s+(.*)$/);
+        return m ? { tr: m[1].trim(), ru: m[2].trim() } : { tr: line, ru: "" };
+      })
+      .filter((e) => e.tr);
+  }
+
+  // Creates/attaches examples under a word. Phrases already in the list are
+  // attached instead of duplicated; missing translations come from Claude in
+  // one call. Returns how many were added, or -1 if translation failed.
+  async function addExamplesTo(wordId: string, items: { tr: string; ru: string }[]): Promise<number> {
+    const toLink: string[] = [];
+    const toCreate: { tr: string; ru: string }[] = [];
+    for (const it of items) {
+      const ex = words.find((w) => lowerForeign(w.tr) === lowerForeign(it.tr));
+      if (ex) {
+        if (ex.id !== wordId && !ex.parents.includes(wordId) && !words.some((w) => w.parents.includes(ex.id))) {
+          toLink.push(ex.id);
+        }
+      } else if (!toCreate.some((c) => lowerForeign(c.tr) === lowerForeign(it.tr))) {
+        toCreate.push(it);
+      }
+    }
+    const missing = toCreate.filter((c) => !c.ru).map((c) => c.tr);
+    if (missing.length > 0) {
+      try {
+        const raw = await callClaude(
+          `Переведи фразы на ${LANGUAGE.adjN} языке на ${NATIVE.adjM} язык (естественно, кратко). Фразы: ${JSON.stringify(
+            missing
+          )}. Ответь СТРОГО в виде JSON-объекта вида {"фраза":"перевод"} без markdown-разметки и пояснений.`,
+          1000
+        );
+        const map = JSON.parse(stripFence(raw));
+        const byLower: Record<string, string> = {};
+        Object.keys(map).forEach((k) => (byLower[lowerForeign(k.trim())] = map[k]));
+        toCreate.forEach((c) => {
+          if (!c.ru) c.ru = map[c.tr] || byLower[lowerForeign(c.tr)] || "";
+        });
+      } catch (e) {
+        return -1;
+      }
+      if (toCreate.some((c) => !c.ru)) return -1;
+    }
+    const now = Date.now();
+    const created: Word[] = toCreate.map((c, i) =>
+      normalizeCase({ id: uid(), tr: c.tr, ru: c.ru, added: now + i, correct: 0, wrong: 0, parents: [wordId] })
+    );
+    setWords((prev) => [
+      ...created,
+      ...prev.map((w) => (toLink.includes(w.id) ? { ...w, parents: [...w.parents, wordId] } : w)),
+    ]);
+    await Promise.all([...created.map((w) => apiAddWord(w)), ...toLink.map((id) => apiLink(id, wordId, true))]);
+    return created.length + toLink.length;
+  }
+
+  // ---- editing ----
+  function startEdit(w: Word) {
+    setEditingId(w.id);
+    setEditTr(w.tr);
+    setEditRu(w.ru);
+    setEditMsg("");
+  }
+
+  async function saveEdit() {
+    if (!editingId) return;
+    const tr = lowerForeign(editTr.trim());
+    const ru = lowerNative(editRu.trim());
+    if (!tr || !ru) {
+      setEditMsg("Fill in both fields.");
+      return;
+    }
+    if (words.some((w) => w.id !== editingId && lowerForeign(w.tr) === tr)) {
+      setEditMsg("Another entry already has this spelling.");
+      return;
+    }
+    const id = editingId;
+    setWords((prev) => prev.map((w) => (w.id === id ? { ...w, tr, ru } : w)));
+    setEditingId(null);
+    await apiUpdateWord(id, { tr, ru });
+  }
+
+  function renderEditForm() {
+    return (
+      <div className="vt-edit-form">
+        <span className="vt-field-label">{LANGUAGE.name}</span>
+        <input className="vt-input" value={editTr} onChange={(e) => setEditTr(e.target.value)} />
+        <span className="vt-field-label" style={{ marginTop: 10 }}>
+          {NATIVE.name} (separate meanings with commas)
+        </span>
+        <input
+          className="vt-input"
+          value={editRu}
+          autoFocus
+          onChange={(e) => setEditRu(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && saveEdit()}
+        />
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button className="vt-btn vt-btn-primary" style={{ flex: 1 }} onClick={saveEdit}>
+            <Check size={15} /> Save
+          </button>
+          <button className="vt-btn vt-btn-ghost" style={{ flex: 1 }} onClick={() => setEditingId(null)}>
+            Cancel
+          </button>
+        </div>
+        {editMsg && <div className="vt-msg" style={{ color: "var(--coral)" }}>{editMsg}</div>}
+      </div>
+    );
   }
 
   // ---- text tab ----
@@ -568,6 +722,7 @@ export default function VocabTrainer() {
   function openWord(id: string) {
     setOpenWordId(id);
     setLinkingId(null);
+    setEditingId(null);
     setExTr("");
     setExRu("");
     setExMsg("");
@@ -1166,6 +1321,7 @@ export default function VocabTrainer() {
           text-decoration: underline;
           cursor: pointer;
         }
+        .vt-edit-form { display: flex; flex-direction: column; }
         .vt-link-panel {
           padding: 10px 12px 12px;
           background: #FFFFFF;
@@ -1265,8 +1421,21 @@ export default function VocabTrainer() {
               />
             </div>
           </div>
-          <button className="vt-btn vt-btn-primary vt-btn-block" onClick={handleAddWord}>
-            <Plus size={15} /> Save word
+          <div className="vt-row">
+            <div>
+              <span className="vt-field-label">Examples (optional, one per line)</span>
+              <textarea
+                className="vt-textarea"
+                style={{ minHeight: 72 }}
+                value={newExamples}
+                onChange={(e) => setNewExamples(e.target.value)}
+                placeholder={"belirgin bir fark\nbelirgin bir fark — заметная разница"}
+              />
+              <div className="vt-also-in">Translation after a dash, or leave it out to translate automatically.</div>
+            </div>
+          </div>
+          <button className="vt-btn vt-btn-primary vt-btn-block" onClick={handleAddWord} disabled={addSaving}>
+            {addSaving ? <Loader2 size={15} className="vt-spin" /> : <Plus size={15} />} Save word
           </button>
           {addMsg && <div className="vt-msg">{addMsg}</div>}
         </div>
@@ -1540,11 +1709,22 @@ export default function VocabTrainer() {
           </button>
 
           <div className="vt-card">
-            <div className="vt-detail-word">{openWordObj.tr}</div>
-            <div style={{ marginTop: 6, fontSize: 15 }}>{openWordObj.ru}</div>
-            <div className="vt-list-score" style={{ marginTop: 8 }}>
-              ✓{openWordObj.correct} ✗{openWordObj.wrong}
-            </div>
+            {editingId === openWordObj.id ? (
+              renderEditForm()
+            ) : (
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="vt-detail-word">{openWordObj.tr}</div>
+                  <div style={{ marginTop: 6, fontSize: 15 }}>{openWordObj.ru}</div>
+                  <div className="vt-list-score" style={{ marginTop: 8 }}>
+                    ✓{openWordObj.correct} ✗{openWordObj.wrong}
+                  </div>
+                </div>
+                <button className="vt-icon-btn" title="Edit" onClick={() => startEdit(openWordObj)} style={{ alignSelf: "flex-start" }}>
+                  <Pencil size={17} />
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="vt-section-title">Examples ({openExamples.length})</div>
@@ -1573,6 +1753,9 @@ export default function VocabTrainer() {
                       )}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                      <button className="vt-icon-btn" title="Edit" onClick={() => startEdit(ex)}>
+                        <Pencil size={15} />
+                      </button>
                       <button
                         className="vt-icon-btn"
                         title="Also attach to another word"
@@ -1594,6 +1777,7 @@ export default function VocabTrainer() {
                     </div>
                   </div>
                   {linkingId === ex.id && renderLinkPanel(ex)}
+                  {editingId === ex.id && <div className="vt-link-panel">{renderEditForm()}</div>}
                 </div>
               );
             })}

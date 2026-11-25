@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql, ensureTable } from "@/lib/db";
+import { LANGUAGE, NATIVE } from "@/lib/language";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   await ensureTable();
@@ -8,6 +9,13 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   if (body.correct !== undefined && body.wrong !== undefined) {
     await sql`UPDATE words SET correct = ${body.correct}, wrong = ${body.wrong} WHERE id = ${id}`;
+  }
+  // Editing the word / translation; stored lowercase like on insert.
+  if (typeof body.tr === "string" && body.tr.trim()) {
+    await sql`UPDATE words SET tr = ${body.tr.trim().toLocaleLowerCase(LANGUAGE.code)} WHERE id = ${id}`;
+  }
+  if (typeof body.ru === "string" && body.ru.trim()) {
+    await sql`UPDATE words SET ru = ${body.ru.trim().toLocaleLowerCase(NATIVE.code)} WHERE id = ${id}`;
   }
   return NextResponse.json({ ok: true });
 }
