@@ -1429,7 +1429,6 @@ export default function VocabTrainer() {
                 style={{ minHeight: 72 }}
                 value={newExamples}
                 onChange={(e) => setNewExamples(e.target.value)}
-                placeholder={"belirgin bir fark\nbelirgin bir fark — заметная разница"}
               />
               <div className="vt-also-in">Translation after a dash, or leave it out to translate automatically.</div>
             </div>
