@@ -250,7 +250,9 @@ export default function VocabTrainer() {
   const [direction, setDirection] = useState<"tr-ru" | "ru-tr">("tr-ru");
   const [current, setCurrent] = useState<Word | null>(null);
   const [answer, setAnswer] = useState("");
-  const [feedback, setFeedback] = useState<{ correct: boolean; correctAnswer: string } | null>(null);
+  const [feedback, setFeedback] = useState<{ correct: boolean; correctAnswer: string; overridden?: boolean } | null>(
+    null
+  );
   const [sessionStats, setSessionStats] = useState({ correct: 0, wrong: 0 });
   const [showExamples, setShowExamples] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -700,6 +702,23 @@ export default function VocabTrainer() {
     const newWrong = current.wrong + (correct ? 0 : 1);
     setWords((prev) => prev.map((w) => (w.id === current.id ? { ...w, correct: newCorrect, wrong: newWrong } : w)));
     await apiUpdateWord(current.id, { correct: newCorrect, wrong: newWrong });
+  }
+
+  // "I was right": the answer meant the same thing but didn't match the
+  // stored translation closely enough (e.g. понимать vs понять). Turns the
+  // wrong answer into a correct one, in the session stats and the word's counts.
+  async function overrideAsCorrect() {
+    if (!current || !feedback || feedback.correct) return;
+    const id = current.id;
+    const w = words.find((x) => x.id === id);
+    if (!w) return;
+    const newCorrect = w.correct + 1;
+    const newWrong = Math.max(0, w.wrong - 1);
+    setFeedback({ ...feedback, correct: true, overridden: true });
+    setSessionStats((s) => ({ correct: s.correct + 1, wrong: Math.max(0, s.wrong - 1) }));
+    setWords((prev) => prev.map((x) => (x.id === id ? { ...x, correct: newCorrect, wrong: newWrong } : x)));
+    setCurrent((c) => (c && c.id === id ? { ...c, correct: newCorrect, wrong: newWrong } : c));
+    await apiUpdateWord(id, { correct: newCorrect, wrong: newWrong });
   }
 
   function handleQuizKey(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -1603,8 +1622,18 @@ export default function VocabTrainer() {
               {feedback && (
                 <div className={`vt-feedback ${feedback.correct ? "correct" : "wrong"}`}>
                   {feedback.correct ? <Check size={16} /> : <X size={16} />}
-                  {feedback.correct ? "Correct!" : `Correct answer: ${feedback.correctAnswer}`}
+                  {feedback.overridden
+                    ? `Counted as correct (${feedback.correctAnswer})`
+                    : feedback.correct
+                    ? "Correct!"
+                    : `Correct answer: ${feedback.correctAnswer}`}
                 </div>
+              )}
+
+              {feedback && !feedback.correct && (
+                <button className="vt-btn vt-btn-ghost vt-btn-block" style={{ marginTop: 10 }} onClick={overrideAsCorrect}>
+                  <Check size={15} /> I was right
+                </button>
               )}
 
               {feedback && (
