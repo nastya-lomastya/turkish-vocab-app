@@ -234,6 +234,8 @@ export default function VocabTrainer() {
   const [newRu, setNewRu] = useState("");
   const [newExamples, setNewExamples] = useState("");
   const [addSaving, setAddSaving] = useState(false);
+  const [addError, setAddError] = useState(false);
+  const [lookupSuggestion, setLookupSuggestion] = useState<string | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [addMsg, setAddMsg] = useState("");
 
@@ -308,24 +310,45 @@ export default function VocabTrainer() {
 
 
   // ---- add tab ----
-  async function handleLookup() {
-    if (!newTr.trim()) return;
+  async function handleLookup(textOverride?: string) {
+    const text = (textOverride ?? newTr).trim();
+    if (!text) return;
     setLookupLoading(true);
+    setAddMsg("");
+    setAddError(false);
+    setLookupSuggestion(null);
+    // Claude must not "fix" a misspelled or non-existent word silently
+    // (e.g. kurtmak → "спасать", which is really kurtarmak): it reports it
+    // as not found, optionally with the word that was probably meant.
+    const srcLang = addDirection === "tr-ru" ? LANGUAGE : NATIVE;
+    const dstAdj = addDirection === "tr-ru" ? NATIVE.adjM : LANGUAGE.adjM;
+    const strictness = `Сначала строго проверь, существует ли ТОЧНО такое слово или фраза в ${srcLang.adjM.replace(/ий$/, "ом")} языке именно в этом написании (допустимы обычные грамматические формы). Не исправляй опечатки молча и не угадывай похожее слово. Если такого слова нет или оно написано с ошибкой, ответь {"found":false,"suggestion":"<слово, которое, скорее всего, имелось в виду, или null>"}.`;
+    const prompt =
+      addDirection === "tr-ru"
+        ? `Слово или короткая фраза на ${LANGUAGE.adjM.replace(/ий$/, "ом")} языке: "${text}". ${strictness} Если слово существует, дай перевод на ${dstAdj} язык одним словом или короткой формулировкой (если это глагол — инфинитив) и ответь {"found":true,"translation":"..."}. Ответь СТРОГО JSON-объектом, без markdown-разметки и пояснений.`
+        : `${NATIVE.adjN[0].toUpperCase() + NATIVE.adjN.slice(1)} слово или короткая фраза: "${text}". ${strictness} Если слово существует, переведи его на ${dstAdj} язык одним словом или короткой формулировкой (если это глагол — начальная форма/инфинитив) и ответь {"found":true,"translation":"..."}. Ответь СТРОГО JSON-объектом, без markdown-разметки и пояснений.`;
     try {
-      const prompt =
-        addDirection === "tr-ru"
-          ? `Слово или короткая фраза на ${LANGUAGE.adjN} языке: "${newTr.trim()}". Дай перевод на ${NATIVE.adjM} язык одним словом или короткой формулировкой (если это глагол — инфинитив). Ответь СТРОГО в виде JSON-объекта {"translation":"..."}, без markdown-разметки и пояснений.`
-          : `Переведи ${NATIVE.adjN} слово или короткую фразу "${newTr.trim()}" на ${LANGUAGE.adjM} язык одним словом или короткой формулировкой (если это глагол — начальная форма/инфинитив). Ответь СТРОГО в виде JSON-объекта {"translation":"..."}, без markdown-разметки и пояснений.`;
       const raw = await callClaude(prompt);
       const parsed = JSON.parse(stripFence(raw));
-      setNewRu(parsed.translation || "");
+      if (parsed.found === false || !parsed.translation) {
+        setNewRu("");
+        setAddError(true);
+        const sug = typeof parsed.suggestion === "string" && parsed.suggestion.trim() ? parsed.suggestion.trim() : null;
+        setLookupSuggestion(sug && lowerForeign(sug) !== lowerForeign(text) ? sug : null);
+        setAddMsg(`Couldn't find “${text}” — check the spelling.`);
+      } else {
+        setNewRu(parsed.translation);
+      }
     } catch (e) {
+      setAddError(true);
       setAddMsg("Couldn't find a translation, enter it manually.");
     }
     setLookupLoading(false);
   }
 
   async function handleAddWord() {
+    setAddError(false);
+    setLookupSuggestion(null);
     if (!newTr.trim() || !newRu.trim()) {
       setAddMsg("Fill in both fields.");
       return;
@@ -1432,11 +1455,14 @@ export default function VocabTrainer() {
               <input
                 className="vt-input"
                 value={newTr}
-                onChange={(e) => setNewTr(e.target.value)}
+                onChange={(e) => {
+                  setNewTr(e.target.value);
+                  if (lookupSuggestion) setLookupSuggestion(null);
+                }}
                 placeholder={addDirection === "tr-ru" ? `e.g. ${LANGUAGE.wordExample}` : `e.g. ${NATIVE.glossExample}`}
               />
             </div>
-            <button className="vt-btn vt-btn-ghost vt-btn-block" onClick={handleLookup} disabled={lookupLoading || !newTr.trim()}>
+            <button className="vt-btn vt-btn-ghost vt-btn-block" onClick={() => handleLookup()} disabled={lookupLoading || !newTr.trim()}>
               {lookupLoading ? <Loader2 size={15} className="vt-spin" /> : <Search size={15} />}
               Find translation
             </button>
@@ -1467,7 +1493,24 @@ export default function VocabTrainer() {
           <button className="vt-btn vt-btn-primary vt-btn-block" onClick={handleAddWord} disabled={addSaving}>
             {addSaving ? <Loader2 size={15} className="vt-spin" /> : <Plus size={15} />} Save word
           </button>
-          {addMsg && <div className="vt-msg">{addMsg}</div>}
+          {addMsg && (
+            <div className="vt-msg" style={addError ? { color: "var(--coral)" } : undefined}>
+              {addMsg}
+            </div>
+          )}
+          {lookupSuggestion && (
+            <button
+              className="vt-btn vt-btn-ghost vt-btn-block"
+              style={{ marginTop: 8 }}
+              onClick={() => {
+                const sug = lookupSuggestion;
+                setNewTr(sug);
+                handleLookup(sug);
+              }}
+            >
+              Did you mean <b>{lookupSuggestion}</b>?
+            </button>
+          )}
         </div>
       )}
 
